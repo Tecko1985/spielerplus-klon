@@ -17,9 +17,21 @@
   a.back { font-size:13px; color:var(--blue); text-decoration:none; font-weight:600; }
   a.back:hover { text-decoration:underline; }
   .page-logo { position:fixed; top:20px; right:20px; height:40px; width:auto; }
+  .dashboard-bar { position:fixed; top:20px; left:20px; padding:0; }
+  .back-to-dashboard {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .back-to-dashboard:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
+  <div class="dashboard-bar"><a href="https://tecko1985.github.io/ToolsUebersicht/" class="back-to-dashboard">← Zurück zum Dashboard</a></div>
   <img class="page-logo" src="logo.png" alt="1. SC 1911 e.V. Heilbad Heiligenstadt" />
   <div class="card">
     <div class="icon">⚽</div>
