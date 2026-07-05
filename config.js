@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // Gruppen-Id (Tools-Übersicht-Benutzerverwaltung) für Nutzer ohne Admin-Status,
 // die als Trainer/Betreuer/Kassenwart verwalten dürfen (Teams, Kader, Termine,
@@ -31,6 +31,17 @@ const DEFAULT_STRAFEN = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Navigation",
+        items: [
+          "Der Tab „Einstellungen“ ist jetzt sichtbar von den übrigen Tabs abgesetzt (rechtsbündig in der Tab-Leiste), wie in der Tools-Übersicht."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [
