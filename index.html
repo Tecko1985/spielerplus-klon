@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>⚽ Kadermanager</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=2.0" />
+<link rel="stylesheet" href="style.css?v=2.1" />
 </head>
 <body>
 
@@ -225,6 +225,20 @@
             <div class="form-field"><label>Name *</label><input type="text" id="pf-name" placeholder="Vor- und Nachname" /></div>
             <div class="form-field"><label>Position</label><input type="text" id="pf-position" placeholder="z. B. Tor, Abwehr" /></div>
             <div class="form-field"><label>Rückennummer</label><input type="number" id="pf-nummer" min="0" placeholder="optional" /></div>
+          </div>
+          <div class="form-field wide">
+            <label>Foto</label>
+            <div class="foto-upload-row">
+              <div class="foto-preview" id="pf-foto-preview">?</div>
+              <div class="foto-upload-actions">
+                <label class="btn small secondary foto-upload-label">
+                  Foto wählen…
+                  <input type="file" id="pf-foto-input" accept="image/*" class="hidden-file-input" />
+                </label>
+                <button type="button" class="btn small secondary hidden" id="btn-remove-foto">Foto entfernen</button>
+                <span class="foto-upload-status" id="pf-foto-status"></span>
+              </div>
+            </div>
           </div>
           <div class="form-field wide">
             <label>Verknüpftes Konto (Tools-Übersicht-Nutzername)</label>
@@ -463,8 +477,8 @@
     </div>
   </div>
 
-  <script src="config.js?v=2.0"></script>
-  <script src="db.js?v=2.0"></script>
-  <script src="app.js?v=2.0"></script>
+  <script src="config.js?v=2.1"></script>
+  <script src="db.js?v=2.1"></script>
+  <script src="app.js?v=2.1"></script>
 </body>
 </html>

@@ -54,6 +54,8 @@ let kasseKategorieFilter = "alle";
 let kasseZeigeStornos = false;
 let editingTeamId = null;
 let editingSpielerId = null;
+let editingFotoId = "";
+let fotoUploadBusy = false;
 let editingTerminId = null;
 let detailTerminId = null;
 let editingUmfrageId = null;
@@ -69,7 +71,8 @@ function normalizeSpieler(s) {
     position: typeof d.position === "string" ? d.position : "",
     nummer: d.nummer == null ? "" : String(d.nummer),
     linkedUsername: typeof d.linkedUsername === "string" ? d.linkedUsername : "",
-    rollen: Array.isArray(d.rollen) ? d.rollen.filter((r) => KADER_ROLLEN.some((k) => k.id === r)) : []
+    rollen: Array.isArray(d.rollen) ? d.rollen.filter((r) => KADER_ROLLEN.some((k) => k.id === r)) : [],
+    fotoId: typeof d.fotoId === "string" ? d.fotoId : ""
   };
 }
 function normalizeTeilnahme(obj, kaderIds) {
@@ -513,6 +516,95 @@ function renderDetail() {
   renderFahrgemeinschaft(team, termin);
 }
 
+// ---------- Spielerfotos (Blob-Cache über das TeamCloud-Datei-Gateway) ----------
+// fotoId zeigt auf dieselbe dav-file-*-Ablage wie TeamCloud (siehe db.js) — kein
+// eigener Speichermechanismus, und die Fotos landen NICHT in appData selbst (das wird
+// bei jedem persist() komplett neu geladen/gespeichert, siehe saveNow/gatewaySave).
+// Client-seitig auf FOTO_MAX_DIMENSION verkleinert/komprimiert (siehe resizeImageFile).
+const fotoUrlCache = new Map();
+const fotoLoadPromises = new Map();
+function loadFoto(fotoId) {
+  if (!fotoId) return Promise.resolve(null);
+  if (fotoUrlCache.has(fotoId)) return Promise.resolve(fotoUrlCache.get(fotoId));
+  if (fotoLoadPromises.has(fotoId)) return fotoLoadPromises.get(fotoId);
+  const p = gatewayFetchFileBlob(fotoId)
+    .then((blob) => { const url = URL.createObjectURL(blob); fotoUrlCache.set(fotoId, url); return url; })
+    .catch((e) => { console.warn("Foto konnte nicht geladen werden:", e); return null; })
+    .finally(() => fotoLoadPromises.delete(fotoId));
+  fotoLoadPromises.set(fotoId, p);
+  return p;
+}
+// Verkleinert/komprimiert eine ausgewählte Bilddatei clientseitig auf maxDim (längste
+// Kante) als JPEG, bevor sie hochgeladen wird — Spielerfotos sind nur kleine Avatare,
+// eine Rohdatei vom Handy (mehrere MB) wäre unnötig groß für Chips von 36px.
+function resizeImageFile(file, maxDim) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("Bild konnte nicht verarbeitet werden.")); return; }
+        resolve(new File([blob], "foto.jpg", { type: "image/jpeg" }));
+      }, "image/jpeg", 0.85);
+    };
+    img.onerror = () => reject(new Error("Datei ist kein gültiges Bild."));
+    reader.readAsDataURL(file);
+  });
+}
+// Setzt Foto (falls schon geladen) oder ersatzweise Nummer/Initiale auf ein
+// Avatar-Element (Aufstellung-Chip oder Kader-Zeile). Fehlt das Foto noch im Cache,
+// wird es asynchron nachgeladen und dasselbe Element erneut aktualisiert — sofern es
+// noch im DOM hängt und nicht inzwischen neu gerendert/wiederverwendet wurde.
+// Verwaltet NUR ein eigenes ".avatar-content"-Kind, damit andere, separat angehängte
+// Kinder (z. B. der Hover-Tooltip der Aufstellung-Chips) beim Nachladen unangetastet bleiben.
+function applyAvatarVisual(el, s, opts) {
+  const withBadge = !opts || opts.badge !== false;
+  let content = el.querySelector(":scope > .avatar-content");
+  if (!content) {
+    content = document.createElement("span");
+    content.className = "avatar-content";
+    el.insertBefore(content, el.firstChild);
+  }
+  content.innerHTML = "";
+  el.style.backgroundImage = "";
+  el.classList.remove("has-foto");
+  content.textContent = s.nummer || (s.name ? s.name.trim().charAt(0).toUpperCase() : "?");
+  if (!s.fotoId) { delete el.dataset.fotoFor; return; }
+  el.dataset.fotoFor = s.fotoId;
+  const cached = fotoUrlCache.get(s.fotoId);
+  if (cached) {
+    el.style.backgroundImage = `url("${cached}")`;
+    el.classList.add("has-foto");
+    content.textContent = "";
+    if (withBadge && s.nummer) {
+      const badge = document.createElement("span");
+      badge.className = "avatar-nummer-badge";
+      badge.textContent = s.nummer;
+      content.appendChild(badge);
+    }
+    return;
+  }
+  loadFoto(s.fotoId).then((url) => {
+    if (url && el.isConnected && el.dataset.fotoFor === s.fotoId) applyAvatarVisual(el, s, opts);
+  });
+}
+function avatarTooltip(s) {
+  const tip = document.createElement("span");
+  tip.className = "chip-tooltip";
+  const meta = [s.position, s.nummer ? "#" + s.nummer : ""].filter(Boolean).join(" · ");
+  tip.innerHTML = escapeHtml(s.name || "?") + (meta ? `<small>${escapeHtml(meta)}</small>` : "");
+  return tip;
+}
+
 // ---------- Termin-Erweiterungen: Aufstellung (visuelles Spielfeld, Drag & Drop) ----------
 // Pointer-Events statt natives HTML5-DnD, damit Touch (mobile) und Maus (desktop)
 // einheitlich funktionieren (App ist laut ToolsUebersicht als mobile+desktop registriert).
@@ -524,15 +616,14 @@ function renderAufstellung(team, termin) {
   const bankIds = a.bank;
   const poolIds = team.kader.filter((s) => !feldIds.includes(s.id) && !bankIds.includes(s.id)).map((s) => s.id);
 
-  function chipLabel(s) { return s.nummer || (s.name ? s.name.trim().charAt(0).toUpperCase() : "?"); }
   function makeChip(className, spielerId) {
     const s = findSpieler(team, spielerId);
     if (!s) return null;
     const chip = document.createElement("div");
     chip.className = className + (manage ? "" : " readonly");
     chip.dataset.spieler = s.id;
-    chip.textContent = chipLabel(s);
-    chip.title = s.name || "";
+    applyAvatarVisual(chip, s);
+    chip.appendChild(avatarTooltip(s));
     if (manage) chip.addEventListener("pointerdown", startAufstellungDrag);
     return chip;
   }
@@ -994,11 +1085,10 @@ function renderKader() {
     else if (s.linkedUsername) badge = `<span class="link-badge linked">🔗 ${escapeHtml(s.linkedUsername)}</span>`;
     else badge = `<span class="link-badge free">nicht verknüpft</span>${myId ? "" : `<button class="btn small" data-claim="${escapeHtml(s.id)}">Das bin ich</button>`}`;
     const editBtn = manage ? `<button class="icon-btn edit" data-edit-spieler="${escapeHtml(s.id)}" title="Bearbeiten">✎</button>` : "";
-    const initial = s.nummer || (s.name ? s.name.trim().charAt(0).toUpperCase() : "?");
     const rollenLabels = (s.rollen || []).map((r) => { const k = KADER_ROLLEN.find((x) => x.id === r); return k ? k.label : r; });
     return `<div class="kader-row">
       <div class="kader-left">
-        <span class="kader-nummer">${escapeHtml(initial)}</span>
+        <span class="kader-nummer" data-spieler-id="${escapeHtml(s.id)}"></span>
         <div>
           <div class="kader-name">${escapeHtml(s.name || "—")}</div>
           ${s.position ? `<div class="kader-pos">${escapeHtml(s.position)}</div>` : ""}
@@ -1008,6 +1098,10 @@ function renderKader() {
       <div class="kader-right">${badge}${editBtn}</div>
     </div>`;
   }).join("");
+  listEl.querySelectorAll(".kader-nummer[data-spieler-id]").forEach((el) => {
+    const s = findSpieler(team, el.dataset.spielerId);
+    if (s) applyAvatarVisual(el, s);
+  });
 }
 function claimSpieler(id) {
   const team = currentTeam();
@@ -1033,11 +1127,51 @@ function unclaimSpieler(id) {
   renderKader();
   renderTermine();
 }
+function updateFotoPreview() {
+  const preview = document.getElementById("pf-foto-preview");
+  const removeBtn = document.getElementById("btn-remove-foto");
+  preview.style.backgroundImage = "";
+  preview.textContent = "?";
+  removeBtn.classList.add("hidden");
+  if (!editingFotoId) return;
+  removeBtn.classList.remove("hidden");
+  const cached = fotoUrlCache.get(editingFotoId);
+  if (cached) { preview.style.backgroundImage = `url("${cached}")`; preview.textContent = ""; return; }
+  loadFoto(editingFotoId).then((url) => { if (url && editingFotoId) updateFotoPreview(); });
+}
+async function onFotoFileChange(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const statusEl = document.getElementById("pf-foto-status");
+  fotoUploadBusy = true;
+  statusEl.textContent = "Wird hochgeladen…";
+  try {
+    const resized = await resizeImageFile(file, FOTO_MAX_DIMENSION);
+    const meta = await gatewayUploadFile(resized);
+    fotoUrlCache.set(meta.id, URL.createObjectURL(resized));
+    editingFotoId = meta.id;
+    statusEl.textContent = "";
+    updateFotoPreview();
+  } catch (err) {
+    statusEl.textContent = "";
+    alert("Foto-Upload fehlgeschlagen: " + err.message);
+  } finally {
+    fotoUploadBusy = false;
+  }
+}
+function removeFotoPending() {
+  editingFotoId = "";
+  updateFotoPreview();
+}
 function openSpielerModal(id) {
   const team = currentTeam();
   if (!team || !hasRecht(team, "kader")) return;
   const s = id ? findSpieler(team, id) : null;
   editingSpielerId = s ? s.id : null;
+  editingFotoId = s ? s.fotoId : "";
+  document.getElementById("pf-foto-status").textContent = "";
+  updateFotoPreview();
   document.getElementById("spieler-modal-title").textContent = s ? "Spieler bearbeiten" : "Neuer Spieler";
   document.getElementById("pf-name").value = s ? s.name : "";
   document.getElementById("pf-position").value = s ? s.position : "";
@@ -1050,10 +1184,11 @@ function openSpielerModal(id) {
   document.getElementById("spieler-modal").classList.remove("hidden");
   document.getElementById("pf-name").focus();
 }
-function closeSpielerModal() { document.getElementById("spieler-modal").classList.add("hidden"); editingSpielerId = null; }
+function closeSpielerModal() { document.getElementById("spieler-modal").classList.add("hidden"); editingSpielerId = null; editingFotoId = ""; }
 function saveSpieler() {
   const team = currentTeam();
   if (!team) return;
+  if (fotoUploadBusy) { alert("Foto wird noch hochgeladen — bitte kurz warten."); return; }
   const name = val("pf-name").trim();
   if (!name) { alert("Bitte einen Namen eingeben."); return; }
   let s = editingSpielerId ? findSpieler(team, editingSpielerId) : null;
@@ -1063,6 +1198,9 @@ function saveSpieler() {
   s.nummer = val("pf-nummer").trim();
   s.linkedUsername = val("pf-linked").trim();
   s.rollen = Array.from(document.querySelectorAll("#pf-rollen input:checked")).map((el) => el.value);
+  const oldFotoId = s.fotoId || "";
+  s.fotoId = editingFotoId || "";
+  if (oldFotoId && oldFotoId !== s.fotoId) gatewayDeleteFile(oldFotoId);
   persist();
   renderKader();
   renderTermine();
@@ -1073,11 +1211,14 @@ function deleteSpieler() {
   if (!team || !editingSpielerId) return;
   if (!confirm("Diesen Spieler wirklich aus dem Kader entfernen? Seine Rückmeldungen und Buchungen werden ebenfalls entfernt.")) return;
   const id = editingSpielerId;
+  const spieler = findSpieler(team, id);
+  const fotoId = spieler ? spieler.fotoId : "";
   team.kader = team.kader.filter((s) => s.id !== id);
   team.termine.forEach((t) => { delete t.teilnahme[id]; });
   team.umfragen.forEach((u) => { delete u.stimmen[id]; });
   team.kasse.buchungen.forEach((b) => { if (b.spielerId === id) b.spielerId = null; });
   persist();
+  if (fotoId) gatewayDeleteFile(fotoId);
   renderKader();
   renderTermine();
   closeSpielerModal();
@@ -1787,6 +1928,8 @@ function setupListeners() {
   document.getElementById("btn-cancel-spieler").addEventListener("click", closeSpielerModal);
   document.getElementById("btn-save-spieler").addEventListener("click", saveSpieler);
   document.getElementById("btn-delete-spieler").addEventListener("click", deleteSpieler);
+  document.getElementById("pf-foto-input").addEventListener("change", onFotoFileChange);
+  document.getElementById("btn-remove-foto").addEventListener("click", removeFotoPending);
   document.getElementById("spieler-modal").addEventListener("click", (e) => { if (e.target.id === "spieler-modal") closeSpielerModal(); });
   document.getElementById("spieler-form").addEventListener("submit", (e) => { e.preventDefault(); saveSpieler(); });
 

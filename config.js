@@ -1,9 +1,14 @@
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 
 // TeamCloud: Server-Cap (muss zum admin-worker.js-Limit passen) + rein informative
 // Kontingent-Anzeige (kein hartes Limit über die 10 MB je Datei hinaus).
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const TEAMCLOUD_QUOTA_MB = 500;
+
+// Spielerfotos werden clientseitig auf diese längste Kante (px) verkleinert, bevor sie
+// über dasselbe Datei-Gateway wie TeamCloud hochgeladen werden (siehe resizeImageFile
+// in app.js) — sie sind nur kleine Avatare in 36px-Chips, keine Vollbilder.
+const FOTO_MAX_DIMENSION = 240;
 
 // Termin-Typen — Reihenfolge bestimmt die Auswahl-Reihenfolge im Formular.
 const TERMIN_TYPEN = [
@@ -66,6 +71,18 @@ const ROLLEN_RECHTE = {
 };
 
 const APP_CHANGELOG = [
+  {
+    version: "2.1",
+    groups: [
+      {
+        title: "Aufstellung",
+        items: [
+          "Spieler-Chips zeigen beim Überfahren mit der Maus jetzt Name, Position und Rückennummer.",
+          "Spieler können jetzt ein Foto bekommen (Spieler-Formular im Kader-Tab) — es erscheint statt der Nummer in den Aufstellung-Chips und in der Kader-Liste."
+        ]
+      }
+    ]
+  },
   {
     version: "2.0",
     groups: [

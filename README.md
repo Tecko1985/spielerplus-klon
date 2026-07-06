@@ -6,7 +6,7 @@ Vereinsinterne Alternative zu SpielerPlus (Teamorganisation, An-/Abmeldungen zu 
 
 - **Mehrere Mannschaften** mit je eigenem Kader, Terminen, Umfragen, Kasse und Dateiablage (Auswahl oben im Kopf).
 - **Termine** (Training, Spiel, Sonstiges) mit individueller **Zu-/Absage** je Spieler und Teilnahme-Bilanz auf einen Blick. Neue Termine können wöchentlich wiederholt angelegt werden. Je Termin außerdem: **Aufgaben** (an Spieler verteilen und abhaken), **Gruppen** (Trainings-Untergruppen), ein **Video-Link**, eine leichtgewichtige **Fahrgemeinschaft** (Plätze anbieten/suchen) und bei Spielen ein **Spielbericht** (Ergebnis, Torschützen, Bericht).
-- **Aufstellung**: visuelles Spielfeld mit frei per Drag & Drop platzierbaren Spielern, Bank und "Nicht nominiert".
+- **Aufstellung**: visuelles Spielfeld mit frei per Drag & Drop platzierbaren Spielern, Bank und "Nicht nominiert". Chips zeigen beim Überfahren mit der Maus Name, Position und Nummer; Spieler können optional ein Foto bekommen, das dann statt der Nummer im Chip und in der Kader-Liste erscheint.
 - **Mischform der Rückmeldung:** Spieler mit eigenem Tools-Konto verknüpfen sich per „Das bin ich“ selbst mit ihrem Kaderplatz und melden sich dann selbst an/ab; Trainer und Betreuer können für alle anderen eintragen.
 - **Urlaub/Krank**: Zeitraum-Abwesenheiten getrennt von der Termin-Einzel-RSVP, mit Hinweis-Badge im Termin.
 - **Anwesenheits-Statistik** je Spieler über vergangene Termine (Trainings- und Spielquote getrennt).
@@ -17,7 +17,7 @@ Vereinsinterne Alternative zu SpielerPlus (Teamorganisation, An-/Abmeldungen zu 
 
 ## Rechte
 
-Zwei Ebenen: Wer in der Tools-Übersicht für dieses Tool als „Bearbeiten" freigeschaltet ist (Admins immer), darf grundsätzlich verwalten. Darüber hinaus können Kader-Spielern Rollen zugewiesen werden, die den Zugriff auf einzelne Bereiche (Termine, Aufgaben, Aufstellung, Gruppen, Spielberichte, Kader, Kasse, Urlaub/Krank, Dateien, Team/Umfragen) granular einschränken — ohne zugewiesene Rolle bleibt es wie bisher bei vollem Zugriff. Alle übrigen eingeloggten Nutzer sehen die Mannschaften und melden sich für ihren eigenen, selbst verknüpften Kaderplatz an/ab.
+Zwei Ebenen: Wer in der Tools-Übersicht für dieses Tool als „Bearbeiten“ freigeschaltet ist (Admins immer), darf grundsätzlich verwalten. Darüber hinaus können Kader-Spielern Rollen zugewiesen werden, die den Zugriff auf einzelne Bereiche (Termine, Aufgaben, Aufstellung, Gruppen, Spielberichte, Kader, Kasse, Urlaub/Krank, Dateien, Team/Umfragen) granular einschränken — ohne zugewiesene Rolle bleibt es wie bisher bei vollem Zugriff. Alle übrigen eingeloggten Nutzer sehen die Mannschaften und melden sich für ihren eigenen, selbst verknüpften Kaderplatz an/ab.
 
 ## Technik
 
@@ -26,4 +26,4 @@ Login-Gateway der Tools-Übersicht (Cloudflare Worker → Nextcloud/WebDAV) — 
 separates Passwort. Gleichzeitige Änderungen von zwei Geräten werden erkannt und
 gemeldet.
 
-**Status:** Version 2.0. Hieß bis Version 1.3 „Spielerplus-Klon“.
+**Status:** Version 2.1. Hieß bis Version 1.3 „Spielerplus-Klon“.
