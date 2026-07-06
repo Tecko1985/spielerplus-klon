@@ -46,6 +46,7 @@ function terminTyp(id) { return TERMIN_TYPEN.find((t) => t.id === id) || TERMIN_
 // ---------- State ----------
 let appData = { meta: {}, teams: [] };
 let currentUser = null;
+let trainerProfiles = []; // zentrale Lizenz/Mannschaft-Profile aller Nutzer (read-only, Join über linkedUsername)
 let currentTab = "termine";
 let currentTeamId = null;
 let termineFilter = "kommend";
@@ -296,6 +297,18 @@ function myPlayerId(team) {
   return p ? p.id : null;
 }
 function findSpieler(team, id) { return team.kader.find((s) => s.id === id) || null; }
+// Zentrales Trainerprofil (Lizenz + Mannschaften) für einen per Self-Claim verknüpften
+// Kader-Eintrag — rein informative Anzeige, kein Bezug zu rollen/ROLLEN_RECHTE.
+function trainerProfileFor(linkedUsername) {
+  if (!linkedUsername) return null;
+  return trainerProfiles.find((p) => p.username.toLowerCase() === linkedUsername.toLowerCase()) || null;
+}
+function trainerProfileBadgeHtml(linkedUsername) {
+  const p = trainerProfileFor(linkedUsername);
+  if (!p || (!p.lizenz && !p.mannschaften.length)) return "";
+  const parts = [p.lizenz, p.mannschaften.join(", ")].filter(Boolean);
+  return `<span class="muted" title="Zentrales Trainerprofil">${escapeHtml(parts.join(" · "))}</span>`;
+}
 function terminIstKommend(termin) { return (termin.datum || "") >= todayISO(); }
 // Rollen des eigenen (per Self-Claim verknüpften) Kaderplatzes in diesem Team.
 function myRollen(team) {
@@ -1093,6 +1106,7 @@ function renderKader() {
           <div class="kader-name">${escapeHtml(s.name || "—")}</div>
           ${s.position ? `<div class="kader-pos">${escapeHtml(s.position)}</div>` : ""}
           ${rollenLabels.length ? `<div class="kader-rollen">${rollenLabels.map((l) => `<span class="rolle-chip">${escapeHtml(l)}</span>`).join("")}</div>` : ""}
+          ${trainerProfileBadgeHtml(s.linkedUsername)}
         </div>
       </div>
       <div class="kader-right">${badge}${editBtn}</div>
@@ -1706,11 +1720,12 @@ function renderKaderRollenUebersicht() {
       ? rollenLabels.map((l) => `<span class="rolle-chip">${escapeHtml(l)}</span>`).join("")
       : `<span class="muted">keine Rolle</span>`;
     const editBtn = manage ? `<button class="icon-btn edit" data-edit-spieler="${escapeHtml(s.id)}" title="Rollen bearbeiten">✎</button>` : "";
-    return `<tr><td class="strong">${escapeHtml(s.name || "—")}</td><td>${chips}</td><td class="num">${editBtn}</td></tr>`;
+    const profilHtml = trainerProfileBadgeHtml(s.linkedUsername) || `<span class="muted">–</span>`;
+    return `<tr><td class="strong">${escapeHtml(s.name || "—")}</td><td>${chips}</td><td>${profilHtml}</td><td class="num">${editBtn}</td></tr>`;
   }).join("");
   wrap.innerHTML = `<table class="data-table">
-    <thead><tr><th>Spieler</th><th>Rollen</th><th class="num"></th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="3" class="muted">Noch keine Spieler im Kader.</td></tr>`}</tbody>
+    <thead><tr><th>Spieler</th><th>Rollen</th><th>Trainerprofil</th><th class="num"></th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="4" class="muted">Noch keine Spieler im Kader.</td></tr>`}</tbody>
   </table>`;
 }
 function renderRechteMatrix() {
@@ -1855,6 +1870,7 @@ async function startApp() {
   currentTeamId = appData.meta.currentTeamId;
   renderAll();
   try { currentUser = await fetchMe(); } catch (_) { /* best effort */ }
+  try { trainerProfiles = await fetchTrainerProfiles(); } catch (_) { /* best effort */ }
   renderHeaderUser();
   renderAll();
 }

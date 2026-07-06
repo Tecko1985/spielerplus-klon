@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // TeamCloud: Server-Cap (muss zum admin-worker.js-Limit passen) + rein informative
 // Kontingent-Anzeige (kein hartes Limit über die 10 MB je Datei hinaus).

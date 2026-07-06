@@ -64,6 +64,14 @@ async function fetchMe() {
   return gatewayRequest({ action: "me", app: GATEWAY_APP_ID });
 }
 
+// Zentrales Trainerprofil (Lizenz + Mannschaften) ALLER Nutzer — für die read-only
+// Anzeige am Kader-Eintrag (Join über linkedUsername), nicht Teil des Kadermanager-
+// eigenen rollen/ROLLEN_RECHTE-Berechtigungssystems.
+async function fetchTrainerProfiles() {
+  const body = await gatewayRequest({ action: "list-trainer-profiles" });
+  return Array.isArray(body.profiles) ? body.profiles : [];
+}
+
 // ---------- TeamCloud (Binär-Upload über die dav-file-*-Gateway-Aktionen) ----------
 // Gleiches Muster wie E:\vereinskalender\db.js — dieselben Worker-Aktionen sind generisch
 // über DAV_APPS[app] geroutet, kein zusätzlicher admin-worker.js-Code nötig.
