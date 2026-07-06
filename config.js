@@ -1,4 +1,9 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "2.0";
+
+// TeamCloud: Server-Cap (muss zum admin-worker.js-Limit passen) + rein informative
+// Kontingent-Anzeige (kein hartes Limit über die 10 MB je Datei hinaus).
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const TEAMCLOUD_QUOTA_MB = 500;
 
 // Termin-Typen — Reihenfolge bestimmt die Auswahl-Reihenfolge im Formular.
 const TERMIN_TYPEN = [
@@ -24,7 +29,81 @@ const DEFAULT_STRAFEN = [
   { bezeichnung: "Gelb-Rote / Rote Karte (Unsportlichkeit)", betrag: 10 }
 ];
 
+// Kader-Rollen (1:1 aus der SpielerPlus-Recherche übernommen). Ein Spieler kann
+// mehrere Rollen gleichzeitig haben — die daraus resultierenden Rechte sind additiv
+// (Vereinigung aller ROLLEN_RECHTE der eigenen Rollen), siehe hasRecht() in app.js.
+const KADER_ROLLEN = [
+  { id: "admin", label: "Admin" },
+  { id: "trainer", label: "Trainer" },
+  { id: "co-trainer", label: "Co-Trainer" },
+  { id: "tw-trainer", label: "TW-Trainer" },
+  { id: "at-trainer", label: "AT-Trainer" },
+  { id: "foerdertrainer", label: "Fördertrainer" },
+  { id: "nachwuchsleiter", label: "Nachwuchsleiter" },
+  { id: "betreuer", label: "Betreuer" },
+  { id: "kassenwart", label: "Kassenwart" },
+  { id: "spieler", label: "Spieler" },
+  { id: "inaktiv", label: "Inaktiv" }
+];
+
+// Verwalten-Bereiche, auf die eine Rolle Zugriff geben kann. Bewusst verdichtet ggü.
+// SpielerPlus' 19 Einzel-Flags (siehe CLAUDE.md) — für einen Verein mit realistisch
+// 2-5 Verantwortlichen reichen diese 10 Bereiche.
+const RECHTE_BEREICHE = ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte", "kader", "kasse", "urlaubkrank", "teamcloud", "team"];
+
+const ROLLEN_RECHTE = {
+  admin: RECHTE_BEREICHE.slice(),
+  trainer: ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte", "urlaubkrank"],
+  "co-trainer": ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte"],
+  "tw-trainer": ["aufstellungen", "gruppen"],
+  "at-trainer": ["aufgaben", "gruppen"],
+  foerdertrainer: [],
+  nachwuchsleiter: ["kader", "team"],
+  betreuer: ["urlaubkrank", "teamcloud"],
+  kassenwart: ["kasse"],
+  spieler: [],
+  inaktiv: []
+};
+
 const APP_CHANGELOG = [
+  {
+    version: "2.0",
+    groups: [
+      {
+        title: "Rollen & Rechte",
+        items: [
+          "Kader-Spieler können jetzt mehrere Rollen bekommen (Trainer, Co-Trainer, Torwart-/Athletiktrainer, Betreuer, Kassenwart, Nachwuchsleiter, Fördertrainer u. a.) mit granularen Verwalten-Rechten je Bereich, statt nur Admin/Bearbeiter."
+        ]
+      },
+      {
+        title: "Termine",
+        items: [
+          "Neu je Termin: Aufgaben (an Spieler verteilen, abhaken), Gruppen (Trainings-Untergruppen), ein Video-Link und eine leichtgewichtige Fahrgemeinschaft (Plätze anbieten/suchen).",
+          "Bei Spielen zusätzlich ein Spielbericht mit Ergebnis, Torschützen und Freitext-Bericht.",
+          "Neue Aufstellung: visuelles Spielfeld, Spieler per Drag & Drop auf Positionen, Bank oder „Nicht nominiert“ ziehen."
+        ]
+      },
+      {
+        title: "Urlaub/Krank",
+        items: [
+          "Neuer Bereich für Zeitraum-Abwesenheiten, unabhängig von der Zu-/Absage einzelner Termine, mit Hinweis-Badge im Termin."
+        ]
+      },
+      {
+        title: "Kasse",
+        items: [
+          "Buchungen jetzt mit Kategorie (Beitrag/Strafe/Sonstiges) und Filter danach.",
+          "Buchungen werden storniert statt gelöscht — Nachvollziehbarkeit bleibt erhalten, zählen aber nicht mehr zum Kassenstand."
+        ]
+      },
+      {
+        title: "Dateien",
+        items: [
+          "Neuer Tab „Dateien“ (TeamCloud): Dokumente und Bilder je Mannschaft hoch- und herunterladen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.4",
     groups: [

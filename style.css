@@ -251,6 +251,8 @@ table.data-table td.strong, table.data-table td .strong { font-weight: 700; }
 }
 .kader-name { font-weight: 700; font-size: 15px; }
 .kader-pos { font-size: 12px; color: var(--muted); }
+.kader-rollen { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.rolle-chip { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--blue-light); color: var(--blue); }
 .kader-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .link-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 .link-badge.linked { background: var(--green-light); color: var(--green); }
@@ -295,6 +297,13 @@ table.data-table td.strong, table.data-table td .strong { font-weight: 700; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .checkbox-row input { width: 16px; height: 16px; }
 
+.rollen-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.rollen-check {
+  display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;
+  padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px;
+}
+.rollen-check input { width: 14px; height: 14px; }
+
 /* ---------- Filterleiste ---------- */
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; align-items: center; }
 .filter-count { font-size: 13px; color: var(--muted); margin-left: auto; }
@@ -310,6 +319,77 @@ table.data-table td.strong, table.data-table td .strong { font-weight: 700; }
 #meta-view .form-field span { font-size: 14px; }
 .uf-option-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
 .uf-option-row input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.form-field textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; resize: vertical;
+}
+
+/* ---------- Termin-Erweiterungen (Aufgaben/Gruppen/Spielbericht/Fahrgemeinschaft) ---------- */
+.inline-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 14px; }
+.inline-add-row input, .inline-add-row select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.inline-add-row input[type="text"] { flex: 1; min-width: 140px; }
+.aufgabe-row, .gruppe-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 14px; }
+.aufgabe-text, .gruppe-name { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 4px; }
+.aufgabe-zeilen { display: flex; flex-direction: column; gap: 3px; padding-left: 4px; }
+.aufgabe-zeile { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.aufgabe-zeile input { width: 15px; height: 15px; }
+.gruppe-mitglieder { font-size: 13px; color: var(--muted); padding-left: 4px; }
+.fg-row { display: flex; align-items: center; gap: 6px; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.torschuetze-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+
+/* ---------- Aufstellung / Taktikboard ---------- */
+.aufstellung-wrap { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.spielfeld {
+  position: relative; width: 100%; aspect-ratio: 68 / 100; max-width: 340px; margin: 0 auto;
+  background: var(--green); border: 2px solid rgba(255,255,255,0.75); border-radius: 6px; overflow: hidden; touch-action: none;
+}
+.spielfeld-mittellinie { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: rgba(255,255,255,0.75); }
+.spielfeld-mittelkreis {
+  position: absolute; left: 50%; top: 50%; width: 30%; aspect-ratio: 1; border: 2px solid rgba(255,255,255,0.75);
+  border-radius: 50%; transform: translate(-50%, -50%);
+}
+.spielfeld-strafraum { position: absolute; left: 50%; width: 55%; height: 12%; border: 2px solid rgba(255,255,255,0.75); transform: translateX(-50%); }
+.spielfeld-strafraum.oben { top: 0; border-top: none; }
+.spielfeld-strafraum.unten { bottom: 0; border-bottom: none; }
+.feld-chip {
+  position: absolute; transform: translate(-50%, -50%); width: 36px; height: 36px; border-radius: 50%;
+  background: var(--blue); color: white; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; cursor: grab; user-select: none; box-shadow: 0 2px 6px rgba(0,0,0,0.35); touch-action: none;
+}
+.feld-chip.dragging { cursor: grabbing; box-shadow: 0 4px 14px rgba(0,0,0,0.45); opacity: 0.9; }
+.feld-chip.readonly { cursor: default; }
+.aufstellung-zone { border: 1px dashed var(--border); border-radius: 8px; padding: 10px; min-height: 58px; }
+.az-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+.az-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 38px; }
+.az-chip {
+  display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%;
+  background: var(--gray); border: 1.5px solid var(--border); color: var(--text); font-size: 11px; font-weight: 800;
+  cursor: grab; user-select: none; touch-action: none;
+}
+.az-chip.dragging { cursor: grabbing; opacity: 0.9; }
+.az-chip.readonly { cursor: default; }
+
+/* ---------- Urlaub/Krank ---------- */
+.urlaub-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+.urlaub-typ { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.urlaub-typ.urlaub { background: var(--blue-light); color: var(--blue); }
+.urlaub-typ.krank { background: var(--red-light); color: var(--red); }
+.urlaub-name { font-weight: 600; }
+.urlaub-zeitraum { color: var(--muted); font-size: 13px; }
+.urlaub-grund { font-size: 12px; }
+.abwesend-tag { margin-left: 6px; }
+
+/* ---------- Kasse-Erweiterungen (Kategorie/Storno) ---------- */
+tr.storniert { opacity: 0.55; }
+tr.storniert td { text-decoration: line-through; }
+tr.storniert .kategorie-tag { text-decoration: none; }
+.storno-tag { font-size: 10px; font-weight: 700; color: var(--red); text-decoration: none; }
+.kategorie-tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--gray); color: var(--muted); white-space: nowrap; }
+
+/* ---------- TeamCloud ---------- */
+.teamcloud-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.tc-name { font-weight: 600; cursor: pointer; color: var(--blue); }
+.tc-name:hover { text-decoration: underline; }
+.tc-meta { font-size: 12px; color: var(--muted); }
 
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(20, 26, 40, 0.55);

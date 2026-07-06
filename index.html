@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>⚽ Kadermanager</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.4" />
+<link rel="stylesheet" href="style.css?v=2.0" />
 </head>
 <body>
 
@@ -40,6 +40,7 @@
       <button data-tab="statistik">Statistik</button>
       <button data-tab="umfragen">Umfragen</button>
       <button data-tab="kasse">Kasse</button>
+      <button data-tab="teamcloud">Dateien</button>
       <button data-tab="einstellungen" style="margin-left:auto;">Einstellungen <span class="version-badge" id="version-badge-nav"></span></button>
     </nav>
 
@@ -53,7 +54,8 @@
             <button data-filter="vergangen">Vergangene</button>
           </div>
           <div class="toolbar-right">
-            <button class="btn small editor-only hidden" id="btn-new-termin">+ Termin</button>
+            <button class="btn small secondary" id="btn-urlaub-krank">Urlaub/Krank</button>
+            <button class="btn small editor-only hidden" id="btn-new-termin" data-bereich="termine">+ Termin</button>
           </div>
         </div>
         <div id="termine-list"></div>
@@ -69,7 +71,7 @@
         <div class="toolbar">
           <h2 style="margin:0;color:var(--blue);font-size:17px;" id="kader-title">Kader</h2>
           <div class="toolbar-right">
-            <button class="btn small editor-only hidden" id="btn-new-spieler">+ Spieler</button>
+            <button class="btn small editor-only hidden" id="btn-new-spieler" data-bereich="kader">+ Spieler</button>
           </div>
         </div>
         <div id="kader-list"></div>
@@ -98,7 +100,7 @@
         <div class="toolbar">
           <h2 style="margin:0;color:var(--blue);font-size:17px;">Umfragen</h2>
           <div class="toolbar-right">
-            <button class="btn small editor-only hidden" id="btn-new-umfrage">+ Umfrage</button>
+            <button class="btn small editor-only hidden" id="btn-new-umfrage" data-bereich="team">+ Umfrage</button>
           </div>
         </div>
         <div id="umfragen-list"></div>
@@ -113,9 +115,16 @@
           <div class="toolbar">
             <h2 style="margin:0;color:var(--blue);font-size:17px;">Buchungen</h2>
             <div class="toolbar-right">
-              <button class="btn small editor-only hidden" id="btn-new-buchung">+ Buchung</button>
+              <button class="btn small editor-only hidden" id="btn-new-buchung" data-bereich="kasse">+ Buchung</button>
             </div>
           </div>
+          <div class="day-switch" id="kasse-kategorie-filter" style="margin-bottom:10px;">
+            <button data-kategorie="alle" class="active">Alle</button>
+            <button data-kategorie="beitrag">Beiträge</button>
+            <button data-kategorie="strafe">Strafen</button>
+            <button data-kategorie="sonstiges">Sonstiges</button>
+          </div>
+          <label class="checkbox-row" style="margin-bottom:10px;"><input type="checkbox" id="kasse-stornos-toggle" /> Stornos anzeigen</label>
           <div class="table-scroll" id="buchungen-wrap"></div>
           <div class="empty-state hidden" id="buchungen-empty">Noch keine Buchungen.</div>
         </div>
@@ -123,7 +132,7 @@
           <div class="toolbar">
             <h2 style="margin:0;color:var(--blue);font-size:17px;">Strafenkatalog</h2>
             <div class="toolbar-right">
-              <button class="btn small secondary editor-only hidden" id="btn-add-strafe">+ Eintrag</button>
+              <button class="btn small secondary editor-only hidden" id="btn-add-strafe" data-bereich="kasse">+ Eintrag</button>
             </div>
           </div>
           <div id="strafenkatalog-list"></div>
@@ -135,13 +144,30 @@
         <div class="empty-state hidden" id="no-team-kasse">Noch keine Mannschaft angelegt — im Tab „Einstellungen“ eine Mannschaft erstellen.</div>
       </section>
 
+      <!-- ---------- TeamCloud ---------- -->
+      <section class="tab-section" id="tab-teamcloud">
+        <div class="toolbar">
+          <h2 style="margin:0;color:var(--blue);font-size:17px;">Dateien</h2>
+          <div class="toolbar-right">
+            <span class="muted" id="teamcloud-quota"></span>
+            <label class="btn small secondary editor-only hidden" id="btn-upload-teamcloud" data-bereich="teamcloud" style="cursor:pointer;margin-bottom:0;">
+              + Datei
+              <input type="file" id="teamcloud-input" style="display:none;" />
+            </label>
+          </div>
+        </div>
+        <div id="teamcloud-list"></div>
+        <div class="empty-state hidden" id="teamcloud-empty">Noch keine Dateien.</div>
+        <div class="empty-state hidden" id="no-team-teamcloud">Noch keine Mannschaft angelegt — im Tab „Einstellungen“ eine Mannschaft erstellen.</div>
+      </section>
+
       <!-- ---------- Einstellungen ---------- -->
       <section class="tab-section" id="tab-einstellungen">
         <div class="card">
           <div class="toolbar">
             <h2 style="margin:0;color:var(--blue);font-size:17px;">Mannschaften</h2>
             <div class="toolbar-right">
-              <button class="btn small editor-only hidden" id="btn-new-team">+ Mannschaft</button>
+              <button class="btn small editor-only hidden" id="btn-new-team" data-bereich="team">+ Mannschaft</button>
             </div>
           </div>
           <div id="team-admin-list"></div>
@@ -204,6 +230,10 @@
             <label>Verknüpftes Konto (Tools-Übersicht-Nutzername)</label>
             <input type="text" id="pf-linked" placeholder="optional — meist per „Das bin ich“ vom Spieler selbst" />
           </div>
+          <div class="form-field wide">
+            <label>Rollen</label>
+            <div class="rollen-checks" id="pf-rollen"></div>
+          </div>
         </form>
       </div>
       <div class="modal-footer">
@@ -236,6 +266,7 @@
             <div class="form-field"><label>Treffpunkt</label><input type="text" id="ef-treffpunkt" placeholder="z. B. 30 Min. vorher" /></div>
           </div>
           <div class="form-field wide"><label>Notiz</label><input type="text" id="ef-notiz" placeholder="optional" /></div>
+          <div class="form-field wide"><label>Video-Link</label><input type="url" id="ef-video" placeholder="optional, z. B. YouTube-Link" /></div>
           <div id="ef-zyklisch-wrap">
             <label class="checkbox-row" style="margin-top:10px;"><input type="checkbox" id="ef-zyklisch" /> Wöchentlich wiederholen</label>
             <div class="form-field hidden" id="ef-wochen-field" style="max-width:200px;margin-top:10px;">
@@ -267,6 +298,66 @@
         <div id="detail-self"></div>
         <h3 class="detail-subhead">Rückmeldungen</h3>
         <div id="detail-teilnahme"></div>
+
+        <h3 class="detail-subhead">Aufstellung</h3>
+        <div class="aufstellung-wrap">
+          <div class="spielfeld" id="spielfeld">
+            <div class="spielfeld-mittellinie"></div>
+            <div class="spielfeld-mittelkreis"></div>
+            <div class="spielfeld-strafraum oben"></div>
+            <div class="spielfeld-strafraum unten"></div>
+          </div>
+          <div class="aufstellung-zone">
+            <div class="az-title">Bank</div>
+            <div class="az-chips" id="aufstellung-bank"></div>
+          </div>
+          <div class="aufstellung-zone">
+            <div class="az-title">Nicht nominiert</div>
+            <div class="az-chips" id="aufstellung-pool"></div>
+          </div>
+        </div>
+
+        <h3 class="detail-subhead">Aufgaben</h3>
+        <div id="detail-aufgaben"></div>
+        <div class="inline-add-row editor-only hidden" id="aufgabe-add-row" data-bereich="aufgaben">
+          <input type="text" id="af-text" placeholder="Neue Aufgabe, z. B. Bälle mitbringen" />
+          <select id="af-spieler" multiple size="3"></select>
+          <button type="button" class="btn small secondary" id="btn-add-aufgabe">+ Aufgabe</button>
+        </div>
+
+        <h3 class="detail-subhead">Gruppen</h3>
+        <div id="detail-gruppen"></div>
+        <div class="inline-add-row editor-only hidden" id="gruppe-add-row" data-bereich="gruppen">
+          <input type="text" id="gf-name" placeholder="Gruppenname, z. B. Torhüter" />
+          <select id="gf-spieler" multiple size="3"></select>
+          <button type="button" class="btn small secondary" id="btn-add-gruppe">+ Gruppe</button>
+        </div>
+
+        <div id="detail-spielbericht-wrap" class="hidden">
+          <h3 class="detail-subhead">Spielbericht</h3>
+          <div class="form-grid">
+            <div class="form-field"><label>Tore eigene Mannschaft</label><input type="number" id="sb-eigene" min="0" /></div>
+            <div class="form-field"><label>Tore Gegner</label><input type="number" id="sb-gegner" min="0" /></div>
+          </div>
+          <div class="form-field wide"><label>Bericht</label><textarea id="sb-bericht" rows="3" placeholder="optional"></textarea></div>
+          <div class="form-field wide">
+            <label>Torschützen</label>
+            <div id="detail-torschuetzen"></div>
+            <div class="inline-add-row editor-only hidden" id="torschuetze-add-row" data-bereich="spielberichte">
+              <select id="tf-spieler"></select>
+              <input type="number" id="tf-anzahl" min="1" value="1" style="max-width:80px;" />
+              <button type="button" class="btn small secondary" id="btn-add-torschuetze">+ Tor</button>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="detail-subhead">Fahrgemeinschaft</h3>
+        <div id="detail-fahrgemeinschaft"></div>
+        <div class="inline-add-row hidden" id="fg-self-row">
+          <input type="number" id="fg-plaetze" min="1" value="1" style="max-width:80px;" />
+          <button type="button" class="btn small secondary" id="btn-fg-anbieten">Plätze anbieten</button>
+          <button type="button" class="btn small secondary" id="btn-fg-suchen">Platz suchen</button>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn danger editor-only hidden" id="btn-delete-termin-detail">Löschen</button>
@@ -322,6 +413,11 @@
               <option value="ein">Einnahme (Strafe / Beitrag / Einzahlung)</option>
               <option value="aus">Ausgabe</option>
             </select></div>
+            <div class="form-field"><label>Kategorie</label><select id="bf-kategorie">
+              <option value="sonstiges">Sonstiges</option>
+              <option value="beitrag">Beitrag</option>
+              <option value="strafe">Strafe</option>
+            </select></div>
             <div class="form-field"><label>Betrag (€) *</label><input type="number" id="bf-betrag" min="0" step="0.01" placeholder="0,00" /></div>
             <div class="form-field"><label>Datum</label><input type="date" id="bf-datum" /></div>
           </div>
@@ -339,8 +435,36 @@
     </div>
   </div>
 
-  <script src="config.js?v=1.4"></script>
-  <script src="db.js?v=1.4"></script>
-  <script src="app.js?v=1.4"></script>
+  <!-- ---------- Urlaub/Krank ---------- -->
+  <div class="modal-overlay hidden" id="urlaub-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Urlaub/Krank</h2>
+        <button class="modal-close" id="urlaub-modal-close" aria-label="Schließen">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="urlaub-liste"></div>
+        <div class="inline-add-row" id="urlaub-add-row" style="margin-top:14px;">
+          <select id="uk-spieler"></select>
+          <select id="uk-typ">
+            <option value="urlaub">Urlaub</option>
+            <option value="krank">Krank</option>
+          </select>
+          <input type="date" id="uk-von" />
+          <input type="date" id="uk-bis" />
+          <input type="text" id="uk-grund" placeholder="Grund (optional)" />
+          <button type="button" class="btn small secondary" id="btn-add-abwesenheit">+ Eintrag</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div></div>
+        <button class="btn" id="btn-close-urlaub">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js?v=2.0"></script>
+  <script src="db.js?v=2.0"></script>
+  <script src="app.js?v=2.0"></script>
 </body>
 </html>

@@ -63,3 +63,54 @@ async function gatewaySave(dataObj) {
 async function fetchMe() {
   return gatewayRequest({ action: "me", app: GATEWAY_APP_ID });
 }
+
+// ---------- TeamCloud (Binär-Upload über die dav-file-*-Gateway-Aktionen) ----------
+// Gleiches Muster wie E:\vereinskalender\db.js — dieselben Worker-Aktionen sind generisch
+// über DAV_APPS[app] geroutet, kein zusätzlicher admin-worker.js-Code nötig.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const res = String(r.result || "");
+      const comma = res.indexOf(",");
+      resolve(comma >= 0 ? res.slice(comma + 1) : res);
+    };
+    r.onerror = () => reject(new Error("Datei konnte nicht gelesen werden."));
+    r.readAsDataURL(file);
+  });
+}
+async function gatewayUploadFile(file) {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error("Datei ist zu groß (max. " + Math.round(MAX_FILE_BYTES / 1024 / 1024) + " MB).");
+  }
+  const id = uuid();
+  const dataBase64 = await fileToBase64(file);
+  await gatewayRequest({
+    action: "dav-file-put",
+    app: GATEWAY_APP_ID,
+    id,
+    name: file.name,
+    contentType: file.type || "application/octet-stream",
+    dataBase64
+  });
+  return { id, name: file.name, mime: file.type || "application/octet-stream", size: file.size };
+}
+async function gatewayFetchFileBlob(id) {
+  const token = getSessionToken();
+  if (!token) throw new NotLoggedInError();
+  const resp = await fetch(GATEWAY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ action: "dav-file-get", app: GATEWAY_APP_ID, id })
+  });
+  if (resp.status === 401) throw new NotLoggedInError("Sitzung abgelaufen");
+  if (!resp.ok) throw new Error("Datei nicht abrufbar (HTTP " + resp.status + ")");
+  return resp.blob();
+}
+async function gatewayDeleteFile(id) {
+  try {
+    await gatewayRequest({ action: "dav-file-delete", app: GATEWAY_APP_ID, id });
+  } catch (e) {
+    console.warn("Datei-Löschen fehlgeschlagen für", id, e);
+  }
+}

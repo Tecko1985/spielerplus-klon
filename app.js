@@ -50,6 +50,8 @@ let currentTab = "termine";
 let currentTeamId = null;
 let termineFilter = "kommend";
 let statistikJahr = "alle";
+let kasseKategorieFilter = "alle";
+let kasseZeigeStornos = false;
 let editingTeamId = null;
 let editingSpielerId = null;
 let editingTerminId = null;
@@ -66,7 +68,8 @@ function normalizeSpieler(s) {
     name: typeof d.name === "string" ? d.name : "",
     position: typeof d.position === "string" ? d.position : "",
     nummer: d.nummer == null ? "" : String(d.nummer),
-    linkedUsername: typeof d.linkedUsername === "string" ? d.linkedUsername : ""
+    linkedUsername: typeof d.linkedUsername === "string" ? d.linkedUsername : "",
+    rollen: Array.isArray(d.rollen) ? d.rollen.filter((r) => KADER_ROLLEN.some((k) => k.id === r)) : []
   };
 }
 function normalizeTeilnahme(obj, kaderIds) {
@@ -82,6 +85,69 @@ function normalizeTeilnahme(obj, kaderIds) {
   }
   return out;
 }
+function normalizeAufgabe(a, kaderIds) {
+  const d = a && typeof a === "object" ? a : {};
+  const spielerIds = Array.isArray(d.spielerIds) ? d.spielerIds.filter((id) => kaderIds.includes(id)) : [];
+  const erledigt = {};
+  if (d.erledigt && typeof d.erledigt === "object") {
+    Object.keys(d.erledigt).forEach((sid) => { if (spielerIds.includes(sid) && d.erledigt[sid]) erledigt[sid] = true; });
+  }
+  return { id: d.id || uuid(), text: typeof d.text === "string" ? d.text : "", spielerIds, erledigt };
+}
+function normalizeGruppe(g, kaderIds) {
+  const d = g && typeof g === "object" ? g : {};
+  return {
+    id: d.id || uuid(),
+    name: typeof d.name === "string" ? d.name : "",
+    spielerIds: Array.isArray(d.spielerIds) ? d.spielerIds.filter((id) => kaderIds.includes(id)) : []
+  };
+}
+function normalizeSpielbericht(sb, kaderIds) {
+  const d = sb && typeof sb === "object" ? sb : {};
+  const torschuetzen = Array.isArray(d.torschuetzen)
+    ? d.torschuetzen.filter((t) => t && kaderIds.includes(t.spielerId)).map((t) => ({ spielerId: t.spielerId, anzahl: Math.max(1, Number(t.anzahl) || 1) }))
+    : [];
+  return {
+    ergebnisEigenes: d.ergebnisEigenes == null ? "" : String(d.ergebnisEigenes),
+    ergebnisGegner: d.ergebnisGegner == null ? "" : String(d.ergebnisGegner),
+    torschuetzen,
+    bericht: typeof d.bericht === "string" ? d.bericht : ""
+  };
+}
+function normalizeFahrgemeinschaft(f, kaderIds) {
+  const d = f && typeof f === "object" ? f : {};
+  const angebote = Array.isArray(d.angebote)
+    ? d.angebote.filter((a) => a && kaderIds.includes(a.spielerId)).map((a) => ({ spielerId: a.spielerId, plaetze: Math.max(1, Number(a.plaetze) || 1) }))
+    : [];
+  const gesuche = Array.isArray(d.gesuche) ? d.gesuche.filter((id) => kaderIds.includes(id)) : [];
+  return { angebote, gesuche };
+}
+function normalizeAufstellung(a, kaderIds) {
+  const d = a && typeof a === "object" ? a : {};
+  const feld = Array.isArray(d.feld)
+    ? d.feld.filter((p) => p && kaderIds.includes(p.spielerId)).map((p) => ({
+        spielerId: p.spielerId,
+        x: Math.max(0, Math.min(100, Number(p.x) || 0)),
+        y: Math.max(0, Math.min(100, Number(p.y) || 0))
+      }))
+    : [];
+  const feldIds = feld.map((p) => p.spielerId);
+  const bank = Array.isArray(d.bank) ? d.bank.filter((id) => kaderIds.includes(id) && !feldIds.includes(id)) : [];
+  return { feld, bank };
+}
+// Default-Werte für die Termin-Erweiterungen, die ein neu angelegter/zyklisch
+// kopierter Termin sofort braucht (sonst würden Render-Funktionen auf fehlenden
+// Feldern scheitern, weil normalizeTermin erst beim nächsten Laden vom Server läuft).
+function emptyTerminExtras() {
+  return {
+    videoUrl: "",
+    aufgaben: [],
+    gruppen: [],
+    spielbericht: { ergebnisEigenes: "", ergebnisGegner: "", torschuetzen: [], bericht: "" },
+    fahrgemeinschaft: { angebote: [], gesuche: [] },
+    aufstellung: { feld: [], bank: [] }
+  };
+}
 function normalizeTermin(t, kaderIds) {
   const d = t && typeof t === "object" ? t : {};
   return {
@@ -95,7 +161,13 @@ function normalizeTermin(t, kaderIds) {
     gegner: typeof d.gegner === "string" ? d.gegner : "",
     treffpunkt: typeof d.treffpunkt === "string" ? d.treffpunkt : "",
     notiz: typeof d.notiz === "string" ? d.notiz : "",
-    teilnahme: normalizeTeilnahme(d.teilnahme, kaderIds)
+    videoUrl: typeof d.videoUrl === "string" ? d.videoUrl : "",
+    teilnahme: normalizeTeilnahme(d.teilnahme, kaderIds),
+    aufgaben: Array.isArray(d.aufgaben) ? d.aufgaben.map((a) => normalizeAufgabe(a, kaderIds)) : [],
+    gruppen: Array.isArray(d.gruppen) ? d.gruppen.map((g) => normalizeGruppe(g, kaderIds)) : [],
+    spielbericht: normalizeSpielbericht(d.spielbericht, kaderIds),
+    fahrgemeinschaft: normalizeFahrgemeinschaft(d.fahrgemeinschaft, kaderIds),
+    aufstellung: normalizeAufstellung(d.aufstellung, kaderIds)
   };
 }
 function normalizeUmfrage(u, kaderIds) {
@@ -136,7 +208,32 @@ function normalizeBuchung(b, kaderIds) {
     bezeichnung: typeof d.bezeichnung === "string" ? d.bezeichnung : "",
     betrag: Math.abs(Number(d.betrag) || 0),
     richtung: d.richtung === "aus" ? "aus" : "ein",
-    bezahlt: !!d.bezahlt
+    bezahlt: !!d.bezahlt,
+    kategorie: ["beitrag", "strafe", "sonstiges"].includes(d.kategorie) ? d.kategorie : "sonstiges",
+    storniert: !!d.storniert,
+    storniertAm: typeof d.storniertAm === "string" ? d.storniertAm : ""
+  };
+}
+function normalizeAbwesenheit(a, kaderIds) {
+  const d = a && typeof a === "object" ? a : {};
+  return {
+    id: d.id || uuid(),
+    spielerId: kaderIds.includes(d.spielerId) ? d.spielerId : null,
+    von: typeof d.von === "string" ? d.von : "",
+    bis: typeof d.bis === "string" ? d.bis : "",
+    grund: typeof d.grund === "string" ? d.grund : "",
+    typ: d.typ === "krank" ? "krank" : "urlaub"
+  };
+}
+function normalizeTeamCloudDatei(d) {
+  const x = d && typeof d === "object" ? d : {};
+  return {
+    id: typeof x.id === "string" ? x.id : uuid(),
+    name: typeof x.name === "string" ? x.name : "Datei",
+    mime: typeof x.mime === "string" ? x.mime : "application/octet-stream",
+    size: Number(x.size) || 0,
+    hochgeladenVon: typeof x.hochgeladenVon === "string" ? x.hochgeladenVon : "",
+    hochgeladenAm: typeof x.hochgeladenAm === "string" ? x.hochgeladenAm : ""
   };
 }
 function normalizeKasse(k, kaderIds) {
@@ -157,7 +254,9 @@ function normalizeTeam(t) {
     kader,
     termine: Array.isArray(d.termine) ? d.termine.map((x) => normalizeTermin(x, kaderIds)) : [],
     umfragen: Array.isArray(d.umfragen) ? d.umfragen.map((x) => normalizeUmfrage(x, kaderIds)) : [],
-    kasse: normalizeKasse(d.kasse, kaderIds)
+    kasse: normalizeKasse(d.kasse, kaderIds),
+    abwesenheiten: Array.isArray(d.abwesenheiten) ? d.abwesenheiten.map((x) => normalizeAbwesenheit(x, kaderIds)).filter((a) => a.spielerId) : [],
+    teamCloud: Array.isArray(d.teamCloud) ? d.teamCloud.map(normalizeTeamCloudDatei) : []
   };
 }
 function normalizeData(data) {
@@ -170,9 +269,14 @@ function normalizeData(data) {
 function seedTeam(name, farbe) {
   return {
     id: uuid(), name, farbe: farbe || "#1a56a0",
-    kader: [], termine: [], umfragen: [],
+    kader: [], termine: [], umfragen: [], abwesenheiten: [], teamCloud: [],
     kasse: { strafenkatalog: clone(DEFAULT_STRAFEN).map((s) => ({ id: uuid(), bezeichnung: s.bezeichnung, betrag: s.betrag })), buchungen: [] }
   };
+}
+// Abwesenheit (Urlaub/Krank) eines Spielers, deren Zeitraum das gegebene Datum
+// überdeckt — rein informativ, ändert nie den Zu-/Absage-Status eines Termins.
+function abwesenheitFuer(team, spielerId, datum) {
+  return team.abwesenheiten.find((a) => a.spielerId === spielerId && a.von <= datum && datum <= a.bis) || null;
 }
 
 // ---------- Zugriff / Rechte ----------
@@ -190,8 +294,26 @@ function myPlayerId(team) {
 }
 function findSpieler(team, id) { return team.kader.find((s) => s.id === id) || null; }
 function terminIstKommend(termin) { return (termin.datum || "") >= todayISO(); }
+// Rollen des eigenen (per Self-Claim verknüpften) Kaderplatzes in diesem Team.
+function myRollen(team) {
+  const id = myPlayerId(team);
+  const s = id ? findSpieler(team, id) : null;
+  return s ? s.rollen : [];
+}
+// Granulare Verwalten-Rechte je Bereich (RECHTE_BEREICHE/ROLLEN_RECHTE in config.js).
+// canEdit-Nutzer OHNE zugewiesene Rollen (leeres Array, z.B. weil noch nie welche
+// vergeben wurden) gelten rückwärtskompatibel als "darf alles" — erst eine aktiv
+// zugewiesene Rolle schränkt granular ein.
+function hasRecht(team, bereich) {
+  if (!currentUser) return false;
+  if (currentUser.isAdmin) return true;
+  if (!currentUser.canEdit) return false;
+  const rollen = myRollen(team);
+  if (!rollen.length) return true;
+  return rollen.some((r) => (ROLLEN_RECHTE[r] || []).includes(bereich));
+}
 function canSetStatusFor(team, spielerId, termin) {
-  if (canManage()) return true;
+  if (hasRecht(team, "termine")) return true;
   return myPlayerId(team) === spielerId && terminIstKommend(termin);
 }
 
@@ -359,19 +481,23 @@ function renderDetail() {
     </div>`;
   } else selfEl.innerHTML = "";
 
-  const manage = canManage();
+  const manage = hasRecht(team, "termine");
   const rows = team.kader.slice().sort((a, b) => a.name.localeCompare(b.name)).map((s) => {
     const st = termin.teilnahme[s.id] ? termin.teilnahme[s.id].status : "offen";
     const isSelf = s.id === myId;
     const label = TEILNAHME_STATUS.find((x) => x.id === st);
+    const abwesenheit = abwesenheitFuer(team, s.id, termin.datum);
     let right;
     if (manage) {
       right = `<div class="mini-rsvp">${TEILNAHME_STATUS.map((x) => `<button data-set-spieler="${escapeHtml(s.id)}" data-status="${x.id}" class="${x.id === st ? "active" : ""}" title="${x.label}">${x.kurz}</button>`).join("")}</div>`;
     } else {
       right = `<span class="status-pill ${st}">${label ? label.kurz + " " + label.label : "offen"}</span>`;
     }
+    const abwesendTag = abwesenheit
+      ? `<span class="abwesend-tag" title="${abwesenheit.typ === "krank" ? "Krank" : "Urlaub"}${abwesenheit.grund ? ": " + escapeHtml(abwesenheit.grund) : ""}">${abwesenheit.typ === "krank" ? "🤒" : "🏖️"}</span>`
+      : "";
     return `<div class="teilnahme-row${isSelf ? " is-self" : ""}">
-      <span class="tr-name">${escapeHtml(s.name || "—")}${isSelf ? '<span class="self-tag">DU</span>' : ""}</span>
+      <span class="tr-name">${escapeHtml(s.name || "—")}${isSelf ? '<span class="self-tag">DU</span>' : ""}${abwesendTag}</span>
       ${right}
     </div>`;
   }).join("");
@@ -379,13 +505,319 @@ function renderDetail() {
 
   document.getElementById("btn-edit-termin-detail").classList.toggle("hidden", !manage);
   document.getElementById("btn-delete-termin-detail").classList.toggle("hidden", !manage);
+
+  renderAufstellung(team, termin);
+  renderAufgaben(team, termin);
+  renderGruppen(team, termin);
+  renderSpielbericht(team, termin);
+  renderFahrgemeinschaft(team, termin);
+}
+
+// ---------- Termin-Erweiterungen: Aufstellung (visuelles Spielfeld, Drag & Drop) ----------
+// Pointer-Events statt natives HTML5-DnD, damit Touch (mobile) und Maus (desktop)
+// einheitlich funktionieren (App ist laut ToolsUebersicht als mobile+desktop registriert).
+let aufstellungDrag = null;
+function renderAufstellung(team, termin) {
+  const manage = hasRecht(team, "aufstellungen");
+  const a = termin.aufstellung;
+  const feldIds = a.feld.map((p) => p.spielerId);
+  const bankIds = a.bank;
+  const poolIds = team.kader.filter((s) => !feldIds.includes(s.id) && !bankIds.includes(s.id)).map((s) => s.id);
+
+  function chipLabel(s) { return s.nummer || (s.name ? s.name.trim().charAt(0).toUpperCase() : "?"); }
+  function makeChip(className, spielerId) {
+    const s = findSpieler(team, spielerId);
+    if (!s) return null;
+    const chip = document.createElement("div");
+    chip.className = className + (manage ? "" : " readonly");
+    chip.dataset.spieler = s.id;
+    chip.textContent = chipLabel(s);
+    chip.title = s.name || "";
+    if (manage) chip.addEventListener("pointerdown", startAufstellungDrag);
+    return chip;
+  }
+
+  const feldEl = document.getElementById("spielfeld");
+  feldEl.querySelectorAll(".feld-chip").forEach((el) => el.remove());
+  a.feld.forEach((p) => {
+    const chip = makeChip("feld-chip", p.spielerId);
+    if (!chip) return;
+    chip.style.left = p.x + "%";
+    chip.style.top = p.y + "%";
+    feldEl.appendChild(chip);
+  });
+
+  ["aufstellung-bank", "aufstellung-pool"].forEach((elId, i) => {
+    const el = document.getElementById(elId);
+    el.innerHTML = "";
+    (i === 0 ? bankIds : poolIds).forEach((sid) => {
+      const chip = makeChip("az-chip", sid);
+      if (chip) el.appendChild(chip);
+    });
+  });
+}
+function startAufstellungDrag(e) {
+  e.preventDefault();
+  const chip = e.currentTarget;
+  const rect = chip.getBoundingClientRect();
+  aufstellungDrag = {
+    spielerId: chip.dataset.spieler,
+    offsetX: e.clientX - (rect.left + rect.width / 2),
+    offsetY: e.clientY - (rect.top + rect.height / 2)
+  };
+  chip.setPointerCapture(e.pointerId);
+  chip.classList.add("dragging");
+  chip.style.position = "fixed";
+  chip.style.left = (rect.left + rect.width / 2) + "px";
+  chip.style.top = (rect.top + rect.height / 2) + "px";
+  chip.style.margin = "0";
+  chip.style.zIndex = "999";
+  chip.addEventListener("pointermove", onAufstellungDragMove);
+  chip.addEventListener("pointerup", onAufstellungDragEnd);
+}
+function onAufstellungDragMove(e) {
+  if (!aufstellungDrag) return;
+  e.currentTarget.style.left = (e.clientX - aufstellungDrag.offsetX) + "px";
+  e.currentTarget.style.top = (e.clientY - aufstellungDrag.offsetY) + "px";
+}
+function onAufstellungDragEnd(e) {
+  const chip = e.currentTarget;
+  chip.removeEventListener("pointermove", onAufstellungDragMove);
+  chip.removeEventListener("pointerup", onAufstellungDragEnd);
+  if (!aufstellungDrag) return;
+  const spielerId = aufstellungDrag.spielerId;
+  aufstellungDrag = null;
+  const team = currentTeam();
+  const termin = team && detailTerminId ? team.termine.find((t) => t.id === detailTerminId) : null;
+  if (!team || !termin) return;
+  const a = termin.aufstellung;
+  a.feld = a.feld.filter((p) => p.spielerId !== spielerId);
+  a.bank = a.bank.filter((id) => id !== spielerId);
+  const feldRect = document.getElementById("spielfeld").getBoundingClientRect();
+  const bankRect = document.getElementById("aufstellung-bank").getBoundingClientRect();
+  const x = e.clientX, y = e.clientY;
+  if (x >= feldRect.left && x <= feldRect.right && y >= feldRect.top && y <= feldRect.bottom) {
+    const px = Math.round(((x - feldRect.left) / feldRect.width) * 100);
+    const py = Math.round(((y - feldRect.top) / feldRect.height) * 100);
+    a.feld.push({ spielerId, x: Math.max(2, Math.min(98, px)), y: Math.max(2, Math.min(98, py)) });
+  } else if (x >= bankRect.left && x <= bankRect.right && y >= bankRect.top && y <= bankRect.bottom) {
+    a.bank.push(spielerId);
+  } // sonst: weder Feld noch Bank -> gilt als "nicht nominiert"
+  persist();
+  renderAufstellung(team, termin);
+}
+
+function spielerOptions(team) {
+  return team.kader.slice().sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
+}
+
+// ---------- Termin-Erweiterungen: Aufgaben ----------
+function renderAufgaben(team, termin) {
+  const manage = hasRecht(team, "aufgaben");
+  const myId = myPlayerId(team);
+  const list = document.getElementById("detail-aufgaben");
+  list.innerHTML = termin.aufgaben.map((a) => {
+    const zeilen = (a.spielerIds.length ? a.spielerIds : [null]).map((sid) => {
+      const s = sid ? findSpieler(team, sid) : null;
+      const name = s ? s.name : "(niemand zugewiesen)";
+      const done = sid ? !!a.erledigt[sid] : false;
+      const kannAbhaken = sid && (manage || sid === myId);
+      return `<label class="aufgabe-zeile"><input type="checkbox" data-aufgabe-toggle="${escapeHtml(a.id)}" data-spieler="${sid ? escapeHtml(sid) : ""}" ${done ? "checked" : ""} ${kannAbhaken ? "" : "disabled"} /> ${escapeHtml(name)}</label>`;
+    }).join("");
+    return `<div class="aufgabe-row">
+      <div class="aufgabe-text"><span>${escapeHtml(a.text)}</span>${manage ? `<button class="icon-btn" data-remove-aufgabe="${escapeHtml(a.id)}" title="Entfernen">×</button>` : ""}</div>
+      <div class="aufgabe-zeilen">${zeilen}</div>
+    </div>`;
+  }).join("") || `<p class="muted">Noch keine Aufgaben.</p>`;
+  document.getElementById("af-spieler").innerHTML = spielerOptions(team);
+}
+function addAufgabe() {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "aufgaben")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  const text = val("af-text").trim();
+  if (!text) { alert("Bitte eine Aufgabenbeschreibung eingeben."); return; }
+  const spielerIds = Array.from(document.getElementById("af-spieler").selectedOptions).map((o) => o.value);
+  termin.aufgaben.push({ id: uuid(), text, spielerIds, erledigt: {} });
+  document.getElementById("af-text").value = "";
+  persist();
+  renderAufgaben(team, termin);
+}
+function toggleAufgabe(aufgabeId, spielerId) {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !spielerId) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  const a = termin && termin.aufgaben.find((x) => x.id === aufgabeId);
+  if (!a || !a.spielerIds.includes(spielerId)) return;
+  if (!(hasRecht(team, "aufgaben") || spielerId === myPlayerId(team))) return;
+  if (a.erledigt[spielerId]) delete a.erledigt[spielerId]; else a.erledigt[spielerId] = true;
+  persist();
+  renderAufgaben(team, termin);
+}
+function removeAufgabe(aufgabeId) {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "aufgaben")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  termin.aufgaben = termin.aufgaben.filter((a) => a.id !== aufgabeId);
+  persist();
+  renderAufgaben(team, termin);
+}
+
+// ---------- Termin-Erweiterungen: Gruppen ----------
+function renderGruppen(team, termin) {
+  const manage = hasRecht(team, "gruppen");
+  const list = document.getElementById("detail-gruppen");
+  list.innerHTML = termin.gruppen.map((g) => {
+    const namen = g.spielerIds.map((sid) => { const s = findSpieler(team, sid); return s ? s.name : "?"; }).join(", ") || "—";
+    return `<div class="gruppe-row">
+      <div class="gruppe-name"><span>${escapeHtml(g.name || "Gruppe")}</span>${manage ? `<button class="icon-btn" data-remove-gruppe="${escapeHtml(g.id)}" title="Entfernen">×</button>` : ""}</div>
+      <div class="gruppe-mitglieder">${escapeHtml(namen)}</div>
+    </div>`;
+  }).join("") || `<p class="muted">Noch keine Gruppen.</p>`;
+  document.getElementById("gf-spieler").innerHTML = spielerOptions(team);
+}
+function addGruppe() {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "gruppen")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  const name = val("gf-name").trim();
+  if (!name) { alert("Bitte einen Gruppennamen eingeben."); return; }
+  const spielerIds = Array.from(document.getElementById("gf-spieler").selectedOptions).map((o) => o.value);
+  termin.gruppen.push({ id: uuid(), name, spielerIds });
+  document.getElementById("gf-name").value = "";
+  persist();
+  renderGruppen(team, termin);
+}
+function removeGruppe(gruppeId) {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "gruppen")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  termin.gruppen = termin.gruppen.filter((g) => g.id !== gruppeId);
+  persist();
+  renderGruppen(team, termin);
+}
+
+// ---------- Termin-Erweiterungen: Spielbericht (nur typ === "spiel") ----------
+function renderSpielbericht(team, termin) {
+  const wrap = document.getElementById("detail-spielbericht-wrap");
+  wrap.classList.toggle("hidden", termin.typ !== "spiel");
+  if (termin.typ !== "spiel") return;
+  const sb = termin.spielbericht;
+  document.getElementById("sb-eigene").value = sb.ergebnisEigenes;
+  document.getElementById("sb-gegner").value = sb.ergebnisGegner;
+  document.getElementById("sb-bericht").value = sb.bericht;
+  const manage = hasRecht(team, "spielberichte");
+  document.getElementById("sb-eigene").disabled = !manage;
+  document.getElementById("sb-gegner").disabled = !manage;
+  document.getElementById("sb-bericht").disabled = !manage;
+  document.getElementById("detail-torschuetzen").innerHTML = sb.torschuetzen.map((t, i) => {
+    const s = findSpieler(team, t.spielerId);
+    return `<div class="torschuetze-row"><span>⚽ ${escapeHtml(s ? s.name : "?")} (${t.anzahl})</span>${manage ? `<button class="icon-btn" data-remove-torschuetze="${i}" title="Entfernen">×</button>` : ""}</div>`;
+  }).join("") || `<p class="muted">Noch keine Torschützen erfasst.</p>`;
+  document.getElementById("tf-spieler").innerHTML = spielerOptions(team);
+}
+function updateSpielbericht(feld, value) {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "spielberichte")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  termin.spielbericht[feld] = value;
+  persist();
+}
+function addTorschuetze() {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "spielberichte")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  const spielerId = val("tf-spieler");
+  if (!spielerId) return;
+  const anzahl = Math.max(1, parseInt(val("tf-anzahl"), 10) || 1);
+  termin.spielbericht.torschuetzen.push({ spielerId, anzahl });
+  persist();
+  renderSpielbericht(team, termin);
+}
+function removeTorschuetze(idx) {
+  const team = currentTeam();
+  if (!team || !detailTerminId || !hasRecht(team, "spielberichte")) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  termin.spielbericht.torschuetzen.splice(idx, 1);
+  persist();
+  renderSpielbericht(team, termin);
+}
+
+// ---------- Termin-Erweiterungen: Fahrgemeinschaft ----------
+function renderFahrgemeinschaft(team, termin) {
+  const myId = myPlayerId(team);
+  const manage = hasRecht(team, "termine");
+  const f = termin.fahrgemeinschaft;
+  const angeboteHtml = f.angebote.map((a) => {
+    const s = findSpieler(team, a.spielerId);
+    const kannEntfernen = manage || a.spielerId === myId;
+    return `<div class="fg-row">🚗 ${escapeHtml(s ? s.name : "?")} bietet ${a.plaetze} Platz/Plätze${kannEntfernen ? ` <button class="icon-btn" data-remove-fg-angebot="${escapeHtml(a.spielerId)}" title="Entfernen">×</button>` : ""}</div>`;
+  }).join("");
+  const gesucheHtml = f.gesuche.map((sid) => {
+    const s = findSpieler(team, sid);
+    const kannEntfernen = manage || sid === myId;
+    return `<div class="fg-row">🙋 ${escapeHtml(s ? s.name : "?")} sucht einen Platz${kannEntfernen ? ` <button class="icon-btn" data-remove-fg-gesuch="${escapeHtml(sid)}" title="Entfernen">×</button>` : ""}</div>`;
+  }).join("");
+  document.getElementById("detail-fahrgemeinschaft").innerHTML = (angeboteHtml + gesucheHtml) || `<p class="muted">Noch keine Einträge.</p>`;
+  const meinAngebot = myId ? f.angebote.some((a) => a.spielerId === myId) : false;
+  const meinGesuch = myId ? f.gesuche.includes(myId) : false;
+  document.getElementById("fg-self-row").classList.toggle("hidden", !myId || meinAngebot || meinGesuch);
+}
+function fgAnbieten() {
+  const team = currentTeam();
+  const myId = team ? myPlayerId(team) : null;
+  if (!team || !detailTerminId || !myId) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  const plaetze = Math.max(1, parseInt(val("fg-plaetze"), 10) || 1);
+  termin.fahrgemeinschaft.angebote = termin.fahrgemeinschaft.angebote.filter((a) => a.spielerId !== myId);
+  termin.fahrgemeinschaft.angebote.push({ spielerId: myId, plaetze });
+  persist();
+  renderFahrgemeinschaft(team, termin);
+}
+function fgSuchen() {
+  const team = currentTeam();
+  const myId = team ? myPlayerId(team) : null;
+  if (!team || !detailTerminId || !myId) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  if (!termin.fahrgemeinschaft.gesuche.includes(myId)) termin.fahrgemeinschaft.gesuche.push(myId);
+  persist();
+  renderFahrgemeinschaft(team, termin);
+}
+function fgEntferneAngebot(spielerId) {
+  const team = currentTeam();
+  if (!team || !detailTerminId) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  if (!(hasRecht(team, "termine") || spielerId === myPlayerId(team))) return;
+  termin.fahrgemeinschaft.angebote = termin.fahrgemeinschaft.angebote.filter((a) => a.spielerId !== spielerId);
+  persist();
+  renderFahrgemeinschaft(team, termin);
+}
+function fgEntferneGesuch(spielerId) {
+  const team = currentTeam();
+  if (!team || !detailTerminId) return;
+  const termin = team.termine.find((t) => t.id === detailTerminId);
+  if (!termin) return;
+  if (!(hasRecht(team, "termine") || spielerId === myPlayerId(team))) return;
+  termin.fahrgemeinschaft.gesuche = termin.fahrgemeinschaft.gesuche.filter((id) => id !== spielerId);
+  persist();
+  renderFahrgemeinschaft(team, termin);
 }
 
 // ---------- Termin-Formular ----------
 function openTerminModal(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  if (!team) return;
+  if (!team || !hasRecht(team, "termine")) return;
   const t = id ? team.termine.find((x) => x.id === id) : null;
   editingTerminId = t ? t.id : null;
   document.getElementById("termin-modal-title").textContent = t ? "Termin bearbeiten" : "Neuer Termin";
@@ -399,6 +831,7 @@ function openTerminModal(id) {
   document.getElementById("ef-gegner").value = t ? t.gegner : "";
   document.getElementById("ef-treffpunkt").value = t ? t.treffpunkt : "";
   document.getElementById("ef-notiz").value = t ? t.notiz : "";
+  document.getElementById("ef-video").value = t ? t.videoUrl : "";
   document.getElementById("btn-delete-termin").classList.toggle("hidden", !t);
   document.getElementById("ef-zyklisch-wrap").classList.toggle("hidden", !!t);
   document.getElementById("ef-zyklisch").checked = false;
@@ -428,7 +861,7 @@ function saveTermin() {
     if (wochen > 52) wochen = 52;
   }
   let t = editingTerminId ? team.termine.find((x) => x.id === editingTerminId) : null;
-  if (!t) { t = { id: uuid(), teilnahme: {} }; team.termine.push(t); }
+  if (!t) { t = Object.assign({ id: uuid(), teilnahme: {} }, emptyTerminExtras()); team.termine.push(t); }
   t.typ = val("ef-typ");
   t.titel = val("ef-titel").trim();
   t.datum = datum;
@@ -438,12 +871,13 @@ function saveTermin() {
   t.gegner = t.typ === "spiel" ? val("ef-gegner").trim() : "";
   t.treffpunkt = val("ef-treffpunkt").trim();
   t.notiz = val("ef-notiz").trim();
+  t.videoUrl = val("ef-video").trim();
   for (let i = 1; i < wochen; i++) {
-    team.termine.push({
+    team.termine.push(Object.assign({
       id: uuid(), typ: t.typ, titel: t.titel, datum: addDaysISO(datum, i * 7),
       startZeit: t.startZeit, endZeit: t.endZeit, ort: t.ort,
       gegner: t.gegner, treffpunkt: t.treffpunkt, notiz: t.notiz, teilnahme: {}
-    });
+    }, emptyTerminExtras()));
   }
   persist();
   renderTermine();
@@ -458,6 +892,78 @@ function deleteTermin(id) {
   renderTermine();
   closeTerminModal();
   closeDetail();
+}
+
+// ---------- Urlaub/Krank ----------
+function renderUrlaubKrank() {
+  const team = currentTeam();
+  if (!team) return;
+  const manage = hasRecht(team, "urlaubkrank");
+  const myId = myPlayerId(team);
+  const list = team.abwesenheiten.slice().sort((a, b) => (b.von || "").localeCompare(a.von || ""));
+  document.getElementById("urlaub-liste").innerHTML = list.map((a) => {
+    const s = findSpieler(team, a.spielerId);
+    const kannLoeschen = manage || a.spielerId === myId;
+    return `<div class="urlaub-row">
+      <span class="urlaub-typ ${a.typ}">${a.typ === "krank" ? "🤒 Krank" : "🏖️ Urlaub"}</span>
+      <span class="urlaub-name">${escapeHtml(s ? s.name : "?")}</span>
+      <span class="urlaub-zeitraum">${escapeHtml(fmtDatum(a.von))} – ${escapeHtml(fmtDatum(a.bis))}</span>
+      ${a.grund ? `<span class="urlaub-grund muted">${escapeHtml(a.grund)}</span>` : ""}
+      ${kannLoeschen ? `<button class="icon-btn" data-remove-abwesenheit="${escapeHtml(a.id)}" title="Entfernen">×</button>` : ""}
+    </div>`;
+  }).join("") || `<p class="muted">Noch keine Einträge.</p>`;
+
+  const addRow = document.getElementById("urlaub-add-row");
+  const spielerSelect = document.getElementById("uk-spieler");
+  if (manage) {
+    spielerSelect.innerHTML = spielerOptions(team);
+    spielerSelect.disabled = false;
+    addRow.classList.remove("hidden");
+  } else if (myId) {
+    const me = findSpieler(team, myId);
+    spielerSelect.innerHTML = `<option value="${escapeHtml(myId)}">${escapeHtml(me ? me.name : "")}</option>`;
+    spielerSelect.disabled = true;
+    addRow.classList.remove("hidden");
+  } else {
+    addRow.classList.add("hidden");
+  }
+}
+function openUrlaubModal() {
+  const team = currentTeam();
+  if (!team) return;
+  renderUrlaubKrank();
+  document.getElementById("uk-von").value = todayISO();
+  document.getElementById("uk-bis").value = todayISO();
+  document.getElementById("uk-grund").value = "";
+  document.getElementById("urlaub-modal").classList.remove("hidden");
+}
+function closeUrlaubModal() { document.getElementById("urlaub-modal").classList.add("hidden"); }
+function addAbwesenheit() {
+  const team = currentTeam();
+  if (!team) return;
+  const manage = hasRecht(team, "urlaubkrank");
+  const myId = myPlayerId(team);
+  const spielerId = manage ? val("uk-spieler") : myId;
+  if (!spielerId) return;
+  const von = val("uk-von"), bis = val("uk-bis");
+  if (!von || !bis) { alert("Bitte Zeitraum (von/bis) angeben."); return; }
+  if (bis < von) { alert("„Bis“ darf nicht vor „Von“ liegen."); return; }
+  team.abwesenheiten.push({ id: uuid(), spielerId, von, bis, grund: val("uk-grund").trim(), typ: val("uk-typ") });
+  persist();
+  renderUrlaubKrank();
+  renderTermine();
+  if (detailTerminId) renderDetail();
+}
+function removeAbwesenheit(id) {
+  const team = currentTeam();
+  if (!team) return;
+  const a = team.abwesenheiten.find((x) => x.id === id);
+  if (!a || !(hasRecht(team, "urlaubkrank") || a.spielerId === myPlayerId(team))) return;
+  team.abwesenheiten = team.abwesenheiten.filter((x) => x.id !== id);
+  persist();
+  renderUrlaubKrank();
+  renderTermine();
+  if (detailTerminId) renderDetail();
 }
 
 // ---------- Kader ----------
@@ -478,7 +984,7 @@ function renderKader() {
     hintText.textContent = "Bist du in dieser Mannschaft im Kader? Klicke bei deinem Namen auf „Das bin ich“, um dich selbst an- und abmelden zu können.";
   }
   hintEl.classList.remove("hidden");
-  const manage = canManage();
+  const manage = hasRecht(team, "kader");
   emptyEl.classList.toggle("hidden", team.kader.length > 0);
   const sorted = team.kader.slice().sort((a, b) => a.name.localeCompare(b.name));
   listEl.innerHTML = sorted.map((s) => {
@@ -489,12 +995,14 @@ function renderKader() {
     else badge = `<span class="link-badge free">nicht verknüpft</span>${myId ? "" : `<button class="btn small" data-claim="${escapeHtml(s.id)}">Das bin ich</button>`}`;
     const editBtn = manage ? `<button class="icon-btn edit" data-edit-spieler="${escapeHtml(s.id)}" title="Bearbeiten">✎</button>` : "";
     const initial = s.nummer || (s.name ? s.name.trim().charAt(0).toUpperCase() : "?");
+    const rollenLabels = (s.rollen || []).map((r) => { const k = KADER_ROLLEN.find((x) => x.id === r); return k ? k.label : r; });
     return `<div class="kader-row">
       <div class="kader-left">
         <span class="kader-nummer">${escapeHtml(initial)}</span>
         <div>
           <div class="kader-name">${escapeHtml(s.name || "—")}</div>
           ${s.position ? `<div class="kader-pos">${escapeHtml(s.position)}</div>` : ""}
+          ${rollenLabels.length ? `<div class="kader-rollen">${rollenLabels.map((l) => `<span class="rolle-chip">${escapeHtml(l)}</span>`).join("")}</div>` : ""}
         </div>
       </div>
       <div class="kader-right">${badge}${editBtn}</div>
@@ -526,9 +1034,8 @@ function unclaimSpieler(id) {
   renderTermine();
 }
 function openSpielerModal(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  if (!team) return;
+  if (!team || !hasRecht(team, "kader")) return;
   const s = id ? findSpieler(team, id) : null;
   editingSpielerId = s ? s.id : null;
   document.getElementById("spieler-modal-title").textContent = s ? "Spieler bearbeiten" : "Neuer Spieler";
@@ -536,6 +1043,9 @@ function openSpielerModal(id) {
   document.getElementById("pf-position").value = s ? s.position : "";
   document.getElementById("pf-nummer").value = s ? s.nummer : "";
   document.getElementById("pf-linked").value = s ? s.linkedUsername : "";
+  const rollen = s ? s.rollen : [];
+  document.getElementById("pf-rollen").innerHTML = KADER_ROLLEN.map((r) =>
+    `<label class="rollen-check"><input type="checkbox" value="${r.id}" ${rollen.includes(r.id) ? "checked" : ""} /> ${escapeHtml(r.label)}</label>`).join("");
   document.getElementById("btn-delete-spieler").classList.toggle("hidden", !s);
   document.getElementById("spieler-modal").classList.remove("hidden");
   document.getElementById("pf-name").focus();
@@ -552,6 +1062,7 @@ function saveSpieler() {
   s.position = val("pf-position").trim();
   s.nummer = val("pf-nummer").trim();
   s.linkedUsername = val("pf-linked").trim();
+  s.rollen = Array.from(document.querySelectorAll("#pf-rollen input:checked")).map((el) => el.value);
   persist();
   renderKader();
   renderTermine();
@@ -633,7 +1144,7 @@ function renderUmfragen() {
   const listEl = document.getElementById("umfragen-list");
   const emptyEl = document.getElementById("umfragen-empty");
   if (!team) { listEl.innerHTML = ""; emptyEl.classList.add("hidden"); return; }
-  const manage = canManage();
+  const manage = hasRecht(team, "team");
   const myId = myPlayerId(team);
   const umfragen = team.umfragen.slice().sort((a, b) => (b.erstelltAm || "").localeCompare(a.erstelltAm || ""));
   emptyEl.classList.toggle("hidden", umfragen.length > 0);
@@ -693,9 +1204,8 @@ function vote(umfrageId, optionId) {
   renderUmfragen();
 }
 function openUmfrageModal(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  if (!team) return;
+  if (!team || !hasRecht(team, "team")) return;
   const u = id ? team.umfragen.find((x) => x.id === id) : null;
   editingUmfrageId = u ? u.id : null;
   document.getElementById("umfrage-modal-title").textContent = u ? "Umfrage bearbeiten" : "Neue Umfrage";
@@ -755,9 +1265,9 @@ function deleteUmfrage() {
   closeUmfrageModal();
 }
 function toggleUmfrageOffen(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  const u = team && team.umfragen.find((x) => x.id === id);
+  if (!team || !hasRecht(team, "team")) return;
+  const u = team.umfragen.find((x) => x.id === id);
   if (!u) return;
   u.offen = !u.offen;
   persist();
@@ -774,10 +1284,11 @@ function renderKasse() {
     document.getElementById("kasse-salden-wrap").innerHTML = "";
     return;
   }
-  const manage = canManage();
-  const buchungen = team.kasse.buchungen;
+  const manage = hasRecht(team, "kasse");
+  const alleBuchungen = team.kasse.buchungen;
+  const aktiv = (b) => !b.storniert;
   let bezahltEin = 0, bezahltAus = 0, offenEin = 0;
-  buchungen.forEach((b) => {
+  alleBuchungen.filter(aktiv).forEach((b) => {
     if (b.richtung === "ein") { if (b.bezahlt) bezahltEin += b.betrag; else offenEin += b.betrag; }
     else if (b.bezahlt) bezahltAus += b.betrag;
   });
@@ -785,31 +1296,40 @@ function renderKasse() {
   document.getElementById("kasse-summary").innerHTML = `
     <div class="summary-card strong"><div class="sc-label">Kassenstand</div><div class="sc-value">${escapeHtml(fmtEuro(stand))}</div><div class="sc-sub">bezahlte Ein- minus Ausgaben</div></div>
     <div class="summary-card warn"><div class="sc-label">Offene Beträge</div><div class="sc-value">${escapeHtml(fmtEuro(offenEin))}</div><div class="sc-sub">noch nicht bezahlt</div></div>
-    <div class="summary-card"><div class="sc-label">Buchungen</div><div class="sc-value">${buchungen.length}</div></div>`;
+    <div class="summary-card"><div class="sc-label">Buchungen</div><div class="sc-value">${alleBuchungen.filter(aktiv).length}</div></div>`;
+
+  // Filter (Kategorie + Stornos-Sichtbarkeit)
+  document.querySelectorAll("#kasse-kategorie-filter button").forEach((b) => b.classList.toggle("active", b.dataset.kategorie === kasseKategorieFilter));
+  document.getElementById("kasse-stornos-toggle").checked = kasseZeigeStornos;
 
   // Buchungen-Tabelle
-  const buEmpty = document.getElementById("buchungen-empty");
-  buEmpty.classList.toggle("hidden", buchungen.length > 0);
   const spielerName = (id) => { const s = id ? findSpieler(team, id) : null; return s ? s.name : "Mannschaft"; };
-  const sorted = buchungen.slice().sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
-  const buRows = sorted.map((b) => {
+  const kategorieLabels = { beitrag: "Beitrag", strafe: "Strafe", sonstiges: "Sonstiges" };
+  const gefiltert = alleBuchungen
+    .filter((b) => kasseZeigeStornos || !b.storniert)
+    .filter((b) => kasseKategorieFilter === "alle" || b.kategorie === kasseKategorieFilter)
+    .sort((a, b) => (b.datum || "").localeCompare(a.datum || ""));
+  const buEmpty = document.getElementById("buchungen-empty");
+  buEmpty.classList.toggle("hidden", gefiltert.length > 0);
+  const buRows = gefiltert.map((b) => {
     const vorz = b.richtung === "ein" ? "+" : "−";
     const farbe = b.richtung === "ein" ? "var(--green)" : "var(--red)";
     const bezahltCell = manage
-      ? `<button class="btn small ${b.bezahlt ? "success" : "secondary"}" data-toggle-bezahlt="${escapeHtml(b.id)}">${b.bezahlt ? "bezahlt" : "offen"}</button>`
+      ? `<button class="btn small ${b.bezahlt ? "success" : "secondary"}" data-toggle-bezahlt="${escapeHtml(b.id)}" ${b.storniert ? "disabled" : ""}>${b.bezahlt ? "bezahlt" : "offen"}</button>`
       : (b.bezahlt ? "bezahlt" : "offen");
     const editCell = manage ? `<td><button class="icon-btn edit" data-edit-buchung="${escapeHtml(b.id)}" title="Bearbeiten">✎</button></td>` : "";
-    return `<tr>
+    return `<tr${b.storniert ? ' class="storniert"' : ""}>
       <td>${escapeHtml(fmtDatum(b.datum))}</td>
       <td>${escapeHtml(spielerName(b.spielerId))}</td>
-      <td>${escapeHtml(b.bezeichnung)}</td>
+      <td>${escapeHtml(b.bezeichnung)}${b.storniert ? ' <span class="storno-tag">storniert</span>' : ""}</td>
+      <td><span class="kategorie-tag">${kategorieLabels[b.kategorie] || "Sonstiges"}</span></td>
       <td class="num" style="color:${farbe};font-weight:700;">${vorz}${escapeHtml(fmtEuro(b.betrag))}</td>
       <td>${bezahltCell}</td>
       ${editCell}
     </tr>`;
   }).join("");
-  document.getElementById("buchungen-wrap").innerHTML = buchungen.length
-    ? `<table class="data-table"><thead><tr><th>Datum</th><th>Spieler</th><th>Bezeichnung</th><th class="num">Betrag</th><th>Status</th>${manage ? "<th></th>" : ""}</tr></thead><tbody>${buRows}</tbody></table>`
+  document.getElementById("buchungen-wrap").innerHTML = gefiltert.length
+    ? `<table class="data-table"><thead><tr><th>Datum</th><th>Spieler</th><th>Bezeichnung</th><th>Kategorie</th><th class="num">Betrag</th><th>Status</th>${manage ? "<th></th>" : ""}</tr></thead><tbody>${buRows}</tbody></table>`
     : "";
 
   // Strafenkatalog
@@ -820,9 +1340,9 @@ function renderKasse() {
       ${manage ? `<button class="icon-btn" data-remove-strafe="${i}" title="Entfernen">×</button>` : ""}
     </div>`).join("") || `<p class="muted">Noch keine Einträge im Strafenkatalog.</p>`;
 
-  // Offene Salden je Spieler
+  // Offene Salden je Spieler (Stornos zählen nicht mit)
   const salden = {};
-  buchungen.forEach((b) => { if (b.richtung === "ein" && !b.bezahlt && b.spielerId) salden[b.spielerId] = (salden[b.spielerId] || 0) + b.betrag; });
+  alleBuchungen.filter(aktiv).forEach((b) => { if (b.richtung === "ein" && !b.bezahlt && b.spielerId) salden[b.spielerId] = (salden[b.spielerId] || 0) + b.betrag; });
   const saldenRows = Object.keys(salden).map((sid) => ({ name: spielerName(sid), betrag: salden[sid] }))
     .sort((a, b) => b.betrag - a.betrag)
     .map((r) => `<tr><td class="strong">${escapeHtml(r.name)}</td><td class="num" style="color:var(--red);font-weight:700;">${escapeHtml(fmtEuro(r.betrag))}</td></tr>`).join("");
@@ -831,9 +1351,8 @@ function renderKasse() {
     : `<p class="muted">Aktuell keine offenen Beträge.</p>`;
 }
 function openBuchungModal(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  if (!team) return;
+  if (!team || !hasRecht(team, "kasse")) return;
   const b = id ? team.kasse.buchungen.find((x) => x.id === id) : null;
   editingBuchungId = b ? b.id : null;
   document.getElementById("buchung-modal-title").textContent = b ? "Buchung bearbeiten" : "Neue Buchung";
@@ -844,11 +1363,13 @@ function openBuchungModal(id) {
     team.kader.slice().sort((a, b2) => a.name.localeCompare(b2.name)).map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join("");
   document.getElementById("bf-spieler").value = b && b.spielerId ? b.spielerId : "";
   document.getElementById("bf-richtung").value = b ? b.richtung : "ein";
+  document.getElementById("bf-kategorie").value = b ? b.kategorie : "sonstiges";
   document.getElementById("bf-betrag").value = b ? String(b.betrag) : "";
   document.getElementById("bf-datum").value = b && b.datum ? b.datum : todayISO();
   document.getElementById("bf-bezeichnung").value = b ? b.bezeichnung : "";
   document.getElementById("bf-bezahlt").checked = b ? b.bezahlt : false;
   document.getElementById("btn-delete-buchung").classList.toggle("hidden", !b);
+  document.getElementById("btn-delete-buchung").textContent = b && b.storniert ? "Reaktivieren" : "Stornieren";
   document.getElementById("buchung-modal").classList.remove("hidden");
 }
 function applyVorlage() {
@@ -859,6 +1380,7 @@ function applyVorlage() {
   document.getElementById("bf-bezeichnung").value = s.bezeichnung;
   document.getElementById("bf-betrag").value = String(s.betrag);
   document.getElementById("bf-richtung").value = "ein";
+  document.getElementById("bf-kategorie").value = "strafe";
 }
 function closeBuchungModal() { document.getElementById("buchung-modal").classList.add("hidden"); editingBuchungId = null; }
 function saveBuchung() {
@@ -869,9 +1391,10 @@ function saveBuchung() {
   if (isNaN(betrag) || betrag < 0) { alert("Bitte einen gültigen Betrag angeben."); return; }
   if (!bezeichnung) { alert("Bitte eine Bezeichnung angeben."); return; }
   let b = editingBuchungId ? team.kasse.buchungen.find((x) => x.id === editingBuchungId) : null;
-  if (!b) { b = { id: uuid() }; team.kasse.buchungen.push(b); }
+  if (!b) { b = { id: uuid(), storniert: false, storniertAm: "" }; team.kasse.buchungen.push(b); }
   b.spielerId = val("bf-spieler") || null;
   b.richtung = val("bf-richtung") === "aus" ? "aus" : "ein";
+  b.kategorie = val("bf-kategorie");
   b.betrag = Math.abs(betrag);
   b.datum = val("bf-datum");
   b.bezeichnung = bezeichnung;
@@ -880,28 +1403,106 @@ function saveBuchung() {
   renderKasse();
   closeBuchungModal();
 }
-function deleteBuchung() {
+// Buchungen werden storniert statt gelöscht (Audit-Spur, zählen dann nicht mehr
+// zum Kassenstand) — Strafenkatalog-Vorlagen bleiben davon unberührt (Hard-Delete
+// über data-remove-strafe, das sind Vorlagen, keine Transaktionen).
+function toggleStorno() {
   const team = currentTeam();
-  if (!team || !editingBuchungId) return;
-  if (!confirm("Diese Buchung wirklich löschen?")) return;
-  team.kasse.buchungen = team.kasse.buchungen.filter((x) => x.id !== editingBuchungId);
+  if (!team || !editingBuchungId || !hasRecht(team, "kasse")) return;
+  const b = team.kasse.buchungen.find((x) => x.id === editingBuchungId);
+  if (!b) return;
+  const frage = b.storniert ? "Diese Buchung wieder aktivieren?" : "Diese Buchung stornieren? Sie bleibt zur Nachvollziehbarkeit erhalten, zählt aber nicht mehr zum Kassenstand.";
+  if (!confirm(frage)) return;
+  b.storniert = !b.storniert;
+  b.storniertAm = b.storniert ? new Date().toISOString() : "";
   persist();
   renderKasse();
   closeBuchungModal();
 }
 function toggleBezahlt(id) {
-  if (!canManage()) return;
   const team = currentTeam();
-  const b = team && team.kasse.buchungen.find((x) => x.id === id);
+  if (!team || !hasRecht(team, "kasse")) return;
+  const b = team.kasse.buchungen.find((x) => x.id === id);
   if (!b) return;
   b.bezahlt = !b.bezahlt;
   persist();
   renderKasse();
 }
 
+// ---------- TeamCloud ----------
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+function renderTeamCloud() {
+  const team = teamOr("no-team-teamcloud", ["teamcloud-list", "teamcloud-empty"]);
+  const manage = team ? hasRecht(team, "teamcloud") : false;
+  document.getElementById("btn-upload-teamcloud").classList.toggle("hidden", !manage);
+  if (!team) {
+    document.getElementById("teamcloud-list").innerHTML = "";
+    document.getElementById("teamcloud-empty").classList.add("hidden");
+    document.getElementById("teamcloud-quota").textContent = "";
+    return;
+  }
+  const dateien = team.teamCloud;
+  document.getElementById("teamcloud-empty").classList.toggle("hidden", dateien.length > 0);
+  const gesamt = dateien.reduce((sum, d) => sum + d.size, 0);
+  document.getElementById("teamcloud-quota").textContent = `${fmtBytes(gesamt)} von ${TEAMCLOUD_QUOTA_MB} MB belegt`;
+  document.getElementById("teamcloud-list").innerHTML = dateien.slice()
+    .sort((a, b) => (b.hochgeladenAm || "").localeCompare(a.hochgeladenAm || ""))
+    .map((d) => `
+    <div class="teamcloud-row">
+      <span class="tc-name" data-download-datei="${escapeHtml(d.id)}" title="Herunterladen">📄 ${escapeHtml(d.name)}</span>
+      <span class="tc-meta">${escapeHtml(fmtBytes(d.size))} · ${escapeHtml(d.hochgeladenVon || "?")}</span>
+      ${manage ? `<button class="icon-btn" data-remove-datei="${escapeHtml(d.id)}" title="Entfernen">×</button>` : ""}
+    </div>`).join("");
+}
+async function uploadTeamCloudDatei(file) {
+  const team = currentTeam();
+  if (!team || !file || !hasRecht(team, "teamcloud")) return;
+  try {
+    const meta = await gatewayUploadFile(file);
+    meta.hochgeladenVon = currentUser && (currentUser.vorname || currentUser.username) ? (currentUser.vorname || currentUser.username) : "";
+    meta.hochgeladenAm = new Date().toISOString();
+    team.teamCloud.push(meta);
+    await saveNow();
+    renderTeamCloud();
+  } catch (e) {
+    alert("Hochladen fehlgeschlagen: " + e.message);
+  }
+}
+async function downloadTeamCloudDatei(id) {
+  const team = currentTeam();
+  const d = team && team.teamCloud.find((x) => x.id === id);
+  if (!d) return;
+  try {
+    const blob = await gatewayFetchFileBlob(id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = d.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (e) {
+    alert("Download fehlgeschlagen: " + e.message);
+  }
+}
+async function removeTeamCloudDatei(id) {
+  const team = currentTeam();
+  if (!team || !hasRecht(team, "teamcloud")) return;
+  if (!confirm("Diese Datei wirklich entfernen?")) return;
+  team.teamCloud = team.teamCloud.filter((d) => d.id !== id);
+  await saveNow();
+  await gatewayDeleteFile(id);
+  renderTeamCloud();
+}
+
 // ---------- Einstellungen: Mannschaften ----------
 function renderTeamAdmin() {
-  const manage = canManage();
+  const manage = hasRecht(currentTeam(), "team");
   const list = document.getElementById("team-admin-list");
   const empty = document.getElementById("team-admin-empty");
   list.innerHTML = appData.teams.map((t) => `
@@ -914,7 +1515,7 @@ function renderTeamAdmin() {
   empty.classList.toggle("hidden", appData.teams.length > 0 || !manage);
 }
 function openTeamModal(id) {
-  if (!canManage()) return;
+  if (!hasRecht(currentTeam(), "team")) return;
   const t = id ? appData.teams.find((x) => x.id === id) : null;
   editingTeamId = t ? t.id : null;
   document.getElementById("team-modal-title").textContent = t ? "Mannschaft bearbeiten" : "Neue Mannschaft";
@@ -986,6 +1587,9 @@ function applyEditVisibility() {
   const editable = canManage();
   document.body.classList.toggle("can-edit", editable);
   document.querySelectorAll(".editor-only").forEach((el) => el.classList.toggle("hidden", !editable));
+  if (!editable) return;
+  const team = currentTeam();
+  document.querySelectorAll("[data-bereich]").forEach((el) => el.classList.toggle("hidden", !hasRecht(team, el.dataset.bereich)));
 }
 
 function renderAll() {
@@ -995,6 +1599,7 @@ function renderAll() {
   renderStatistik();
   renderUmfragen();
   renderKasse();
+  renderTeamCloud();
   renderTeamAdmin();
   renderMeta();
   renderVersionInfo();
@@ -1011,6 +1616,7 @@ function switchTab(tab) {
   if (tab === "statistik") renderStatistik();
   if (tab === "umfragen") renderUmfragen();
   if (tab === "kasse") renderKasse();
+  if (tab === "teamcloud") renderTeamCloud();
   if (tab === "einstellungen") { renderTeamAdmin(); renderMeta(); renderVersionInfo(); }
 }
 
@@ -1103,6 +1709,16 @@ function setupListeners() {
     if (open) openDetail(open.dataset.openTermin);
   });
 
+  // Urlaub/Krank
+  document.getElementById("btn-urlaub-krank").addEventListener("click", openUrlaubModal);
+  document.getElementById("urlaub-modal-close").addEventListener("click", closeUrlaubModal);
+  document.getElementById("btn-close-urlaub").addEventListener("click", closeUrlaubModal);
+  document.getElementById("urlaub-modal").addEventListener("click", (e) => { if (e.target.id === "urlaub-modal") closeUrlaubModal(); });
+  document.getElementById("btn-add-abwesenheit").addEventListener("click", addAbwesenheit);
+  document.getElementById("urlaub-liste").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-remove-abwesenheit]"); if (rm) removeAbwesenheit(rm.dataset.removeAbwesenheit);
+  });
+
   // Termin-Modal
   document.getElementById("ef-typ").addEventListener("change", updateGegnerVisibility);
   document.getElementById("ef-zyklisch").addEventListener("change", updateZyklischVisibility);
@@ -1127,6 +1743,38 @@ function setupListeners() {
   });
   document.getElementById("btn-edit-termin-detail").addEventListener("click", () => { if (detailTerminId) { const id = detailTerminId; closeDetail(); openTerminModal(id); } });
   document.getElementById("btn-delete-termin-detail").addEventListener("click", () => { if (detailTerminId) deleteTermin(detailTerminId); });
+
+  // Termin-Detail: Aufgaben
+  document.getElementById("btn-add-aufgabe").addEventListener("click", addAufgabe);
+  document.getElementById("detail-aufgaben").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-remove-aufgabe]"); if (rm) removeAufgabe(rm.dataset.removeAufgabe);
+  });
+  document.getElementById("detail-aufgaben").addEventListener("change", (e) => {
+    const cb = e.target.closest("[data-aufgabe-toggle]"); if (cb) toggleAufgabe(cb.dataset.aufgabeToggle, cb.dataset.spieler);
+  });
+
+  // Termin-Detail: Gruppen
+  document.getElementById("btn-add-gruppe").addEventListener("click", addGruppe);
+  document.getElementById("detail-gruppen").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-remove-gruppe]"); if (rm) removeGruppe(rm.dataset.removeGruppe);
+  });
+
+  // Termin-Detail: Spielbericht
+  document.getElementById("sb-eigene").addEventListener("input", (e) => updateSpielbericht("ergebnisEigenes", e.target.value));
+  document.getElementById("sb-gegner").addEventListener("input", (e) => updateSpielbericht("ergebnisGegner", e.target.value));
+  document.getElementById("sb-bericht").addEventListener("input", (e) => updateSpielbericht("bericht", e.target.value));
+  document.getElementById("btn-add-torschuetze").addEventListener("click", addTorschuetze);
+  document.getElementById("detail-torschuetzen").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-remove-torschuetze]"); if (rm) removeTorschuetze(Number(rm.dataset.removeTorschuetze));
+  });
+
+  // Termin-Detail: Fahrgemeinschaft
+  document.getElementById("btn-fg-anbieten").addEventListener("click", fgAnbieten);
+  document.getElementById("btn-fg-suchen").addEventListener("click", fgSuchen);
+  document.getElementById("detail-fahrgemeinschaft").addEventListener("click", (e) => {
+    const rmA = e.target.closest("[data-remove-fg-angebot]"); if (rmA) { fgEntferneAngebot(rmA.dataset.removeFgAngebot); return; }
+    const rmG = e.target.closest("[data-remove-fg-gesuch]"); if (rmG) fgEntferneGesuch(rmG.dataset.removeFgGesuch);
+  });
 
   // Kader
   document.getElementById("btn-new-spieler").addEventListener("click", () => openSpielerModal(null));
@@ -1192,9 +1840,25 @@ function setupListeners() {
   document.getElementById("buchung-modal-close").addEventListener("click", closeBuchungModal);
   document.getElementById("btn-cancel-buchung").addEventListener("click", closeBuchungModal);
   document.getElementById("btn-save-buchung").addEventListener("click", saveBuchung);
-  document.getElementById("btn-delete-buchung").addEventListener("click", deleteBuchung);
+  document.getElementById("btn-delete-buchung").addEventListener("click", toggleStorno);
   document.getElementById("buchung-modal").addEventListener("click", (e) => { if (e.target.id === "buchung-modal") closeBuchungModal(); });
   document.getElementById("buchung-form").addEventListener("submit", (e) => { e.preventDefault(); saveBuchung(); });
+  document.getElementById("kasse-kategorie-filter").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-kategorie]");
+    if (btn) { kasseKategorieFilter = btn.dataset.kategorie; renderKasse(); }
+  });
+  document.getElementById("kasse-stornos-toggle").addEventListener("change", (e) => { kasseZeigeStornos = e.target.checked; renderKasse(); });
+
+  // TeamCloud
+  document.getElementById("teamcloud-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (file) uploadTeamCloudDatei(file);
+  });
+  document.getElementById("teamcloud-list").addEventListener("click", (e) => {
+    const dl = e.target.closest("[data-download-datei]"); if (dl) { downloadTeamCloudDatei(dl.dataset.downloadDatei); return; }
+    const rm = e.target.closest("[data-remove-datei]"); if (rm) removeTeamCloudDatei(rm.dataset.removeDatei);
+  });
 
   // Einstellungen: Mannschaften
   document.getElementById("btn-new-team").addEventListener("click", () => openTeamModal(null));
@@ -1211,7 +1875,7 @@ function setupListeners() {
   // ESC schließt das oberste offene Modal
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    const modals = ["buchung-modal", "umfrage-modal", "detail-modal", "termin-modal", "spieler-modal", "team-modal"];
+    const modals = ["urlaub-modal", "buchung-modal", "umfrage-modal", "detail-modal", "termin-modal", "spieler-modal", "team-modal"];
     for (const m of modals) {
       const el = document.getElementById(m);
       if (el && !el.classList.contains("hidden")) {
