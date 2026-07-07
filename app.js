@@ -263,11 +263,25 @@ function normalizeTeam(t) {
     teamCloud: Array.isArray(d.teamCloud) ? d.teamCloud.map(normalizeTeamCloudDatei) : []
   };
 }
+// appData.meta.rollenRechte ist die admin-editierbare Live-Kopie der Rechte-Matrix
+// (Startwert ROLLEN_RECHTE aus config.js) — siehe rollenRechte()/renderRechteMatrix()/
+// toggleRollenRecht() weiter unten. Unbekannte/gelöschte Bereiche werden beim Laden
+// rausgefiltert, fehlende Rollen fallen auf den config.js-Startwert zurück.
+function normalizeRollenRechte(obj) {
+  const src = obj && typeof obj === "object" ? obj : {};
+  const out = {};
+  KADER_ROLLEN.forEach((r) => {
+    const v = src[r.id];
+    out[r.id] = Array.isArray(v) ? v.filter((b) => RECHTE_BEREICHE.includes(b)) : (ROLLEN_RECHTE[r.id] || []).slice();
+  });
+  return out;
+}
 function normalizeData(data) {
   const d = data && typeof data === "object" ? data : {};
   const teams = Array.isArray(d.teams) ? d.teams.map(normalizeTeam) : [];
   const meta = d.meta && typeof d.meta === "object" ? Object.assign({}, d.meta) : {};
   if (!teams.some((t) => t.id === meta.currentTeamId)) meta.currentTeamId = teams[0] ? teams[0].id : null;
+  meta.rollenRechte = normalizeRollenRechte(meta.rollenRechte);
   return { meta, teams };
 }
 function seedTeam(name, farbe) {
@@ -316,17 +330,21 @@ function myRollen(team) {
   const s = id ? findSpieler(team, id) : null;
   return s ? s.rollen : [];
 }
-// Granulare Verwalten-Rechte je Bereich (RECHTE_BEREICHE/ROLLEN_RECHTE in config.js).
+// Granulare Verwalten-Rechte je Bereich (RECHTE_BEREICHE in config.js, Zuordnung in
+// appData.meta.rollenRechte, admin-editierbar über die Rollen-Rechte-Tabelle).
 // canEdit-Nutzer OHNE zugewiesene Rollen (leeres Array, z.B. weil noch nie welche
 // vergeben wurden) gelten rückwärtskompatibel als "darf alles" — erst eine aktiv
 // zugewiesene Rolle schränkt granular ein.
+function rollenRechte(rolle) {
+  return (appData.meta.rollenRechte && appData.meta.rollenRechte[rolle]) || ROLLEN_RECHTE[rolle] || [];
+}
 function hasRecht(team, bereich) {
   if (!currentUser) return false;
   if (currentUser.isAdmin) return true;
   if (!currentUser.canEdit) return false;
   const rollen = myRollen(team);
   if (!rollen.length) return true;
-  return rollen.some((r) => (ROLLEN_RECHTE[r] || []).includes(bereich));
+  return rollen.some((r) => rollenRechte(r).includes(bereich));
 }
 function canSetStatusFor(team, spielerId, termin) {
   if (hasRecht(team, "termine")) return true;
@@ -1731,13 +1749,32 @@ function renderKaderRollenUebersicht() {
 function renderRechteMatrix() {
   const wrap = document.getElementById("rechte-matrix-wrap");
   if (!wrap) return;
+  const manage = !!(currentUser && currentUser.isAdmin);
+  const hint = document.getElementById("rechte-matrix-admin-hint");
+  if (hint) hint.classList.toggle("hidden", !manage);
   const header = `<th>Rolle</th>` + RECHTE_BEREICHE.map((b) => `<th>${escapeHtml(RECHTE_BEREICH_LABELS[b] || b)}</th>`).join("");
   const rows = KADER_ROLLEN.map((r) => {
-    const rechte = ROLLEN_RECHTE[r.id] || [];
-    const cells = RECHTE_BEREICHE.map((b) => `<td class="num">${rechte.includes(b) ? "✓" : "–"}</td>`).join("");
+    const rechte = rollenRechte(r.id);
+    const cells = RECHTE_BEREICHE.map((b) => {
+      const on = rechte.includes(b);
+      return manage
+        ? `<td class="num"><input type="checkbox" data-recht-rolle="${escapeHtml(r.id)}" data-recht-bereich="${escapeHtml(b)}" ${on ? "checked" : ""}></td>`
+        : `<td class="num">${on ? "✓" : "–"}</td>`;
+    }).join("");
     return `<tr><td class="strong">${escapeHtml(r.label)}</td>${cells}</tr>`;
   }).join("");
   wrap.innerHTML = `<table class="data-table"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+// Nur echte ToolsUebersicht-Admins dürfen die Rechte-Matrix ändern (systemweite,
+// mannschaftsübergreifende Einstellung, kein team-gebundenes hasRecht()-Bereich).
+function toggleRollenRecht(rolle, bereich, on) {
+  if (!currentUser || !currentUser.isAdmin) return;
+  if (!KADER_ROLLEN.some((r) => r.id === rolle) || !RECHTE_BEREICHE.includes(bereich)) return;
+  const cur = new Set(rollenRechte(rolle));
+  if (on) cur.add(bereich); else cur.delete(bereich);
+  appData.meta.rollenRechte[rolle] = RECHTE_BEREICHE.filter((b) => cur.has(b));
+  persist();
+  renderAll();
 }
 
 // ---------- Meta / Changelog / Nutzer ----------
@@ -2072,6 +2109,10 @@ function setupListeners() {
   // Einstellungen: Rechte & Rollen
   document.getElementById("rechte-kader-wrap").addEventListener("click", (e) => {
     const ed = e.target.closest("[data-edit-spieler]"); if (ed) openSpielerModal(ed.dataset.editSpieler);
+  });
+  document.getElementById("rechte-matrix-wrap").addEventListener("change", (e) => {
+    const cb = e.target.closest("[data-recht-rolle]");
+    if (cb) toggleRollenRecht(cb.dataset.rechtRolle, cb.dataset.rechtBereich, cb.checked);
   });
   document.getElementById("team-form").addEventListener("submit", (e) => { e.preventDefault(); saveTeam(); });
 

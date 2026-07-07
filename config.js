@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 // TeamCloud: Server-Cap (muss zum admin-worker.js-Limit passen) + rein informative
 // Kontingent-Anzeige (kein hartes Limit über die 10 MB je Datei hinaus).
@@ -72,6 +72,9 @@ const RECHTE_BEREICH_LABELS = {
   team: "Mannschaften & Umfragen"
 };
 
+// Startwert der Rechte-Matrix für neue/leere Installationen — die für den laufenden
+// Betrieb maßgebliche, admin-editierbare Kopie liegt in appData.meta.rollenRechte
+// (siehe normalizeRollenRechte/rollenRechte/toggleRollenRecht in app.js).
 const ROLLEN_RECHTE = {
   admin: RECHTE_BEREICHE.slice(),
   trainer: ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte", "urlaubkrank"],
