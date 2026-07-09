@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>⚽ Kadermanager</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.0" />
+<link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body>
 
@@ -40,7 +40,6 @@
       <button data-tab="statistik">Statistik</button>
       <button data-tab="umfragen">Umfragen</button>
       <button data-tab="kasse">Kasse</button>
-      <button data-tab="teamcloud">Dateien</button>
       <button data-tab="einstellungen" style="margin-left:auto;">Einstellungen</button>
     </nav>
 
@@ -142,23 +141,6 @@
           <div class="table-scroll" id="kasse-salden-wrap"></div>
         </div>
         <div class="empty-state hidden" id="no-team-kasse">Noch keine Mannschaft angelegt — im Tab „Einstellungen“ eine Mannschaft erstellen.</div>
-      </section>
-
-      <!-- ---------- TeamCloud ---------- -->
-      <section class="tab-section" id="tab-teamcloud">
-        <div class="toolbar">
-          <h2 style="margin:0;color:var(--blue);font-size:17px;">Dateien</h2>
-          <div class="toolbar-right">
-            <span class="muted" id="teamcloud-quota"></span>
-            <label class="btn small secondary editor-only hidden" id="btn-upload-teamcloud" data-bereich="teamcloud" style="cursor:pointer;margin-bottom:0;">
-              + Datei
-              <input type="file" id="teamcloud-input" style="display:none;" />
-            </label>
-          </div>
-        </div>
-        <div id="teamcloud-list"></div>
-        <div class="empty-state hidden" id="teamcloud-empty">Noch keine Dateien.</div>
-        <div class="empty-state hidden" id="no-team-teamcloud">Noch keine Mannschaft angelegt — im Tab „Einstellungen“ eine Mannschaft erstellen.</div>
       </section>
 
       <!-- ---------- Einstellungen ---------- -->
@@ -489,8 +471,8 @@
     </div>
   </div>
 
-  <script src="config.js?v=1.0"></script>
-  <script src="db.js?v=1.0"></script>
-  <script src="app.js?v=1.0"></script>
+  <script src="config.js?v=1.1"></script>
+  <script src="db.js?v=1.1"></script>
+  <script src="app.js?v=1.1"></script>
 </body>
 </html>

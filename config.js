@@ -1,13 +1,11 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
-// TeamCloud: Server-Cap (muss zum admin-worker.js-Limit passen) + rein informative
-// Kontingent-Anzeige (kein hartes Limit über die 10 MB je Datei hinaus).
+// Server-Cap fürs Datei-Gateway (muss zum admin-worker.js-Limit passen).
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const TEAMCLOUD_QUOTA_MB = 500;
 
 // Spielerfotos werden clientseitig auf diese längste Kante (px) verkleinert, bevor sie
-// über dasselbe Datei-Gateway wie TeamCloud hochgeladen werden (siehe resizeImageFile
-// in app.js) — sie sind nur kleine Avatare in 36px-Chips, keine Vollbilder.
+// über das Datei-Gateway hochgeladen werden (siehe resizeImageFile in app.js) — sie
+// sind nur kleine Avatare in 36px-Chips, keine Vollbilder.
 const FOTO_MAX_DIMENSION = 240;
 
 // Termin-Typen — Reihenfolge bestimmt die Auswahl-Reihenfolge im Formular.
@@ -54,7 +52,7 @@ const KADER_ROLLEN = [
 // Verwalten-Bereiche, auf die eine Rolle Zugriff geben kann. Bewusst verdichtet ggü.
 // SpielerPlus' 19 Einzel-Flags (siehe CLAUDE.md) — für einen Verein mit realistisch
 // 2-5 Verantwortlichen reichen diese 10 Bereiche.
-const RECHTE_BEREICHE = ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte", "kader", "kasse", "urlaubkrank", "teamcloud", "team"];
+const RECHTE_BEREICHE = ["termine", "aufgaben", "aufstellungen", "gruppen", "spielberichte", "kader", "kasse", "urlaubkrank", "team"];
 
 // Anzeige-Labels für die Rechte-Übersichtstabelle im Einstellungen-Tab. "team" deckt
 // im Code sowohl Mannschafts-Verwaltung als auch Umfragen ab (siehe hasRecht-Aufrufe
@@ -68,7 +66,6 @@ const RECHTE_BEREICH_LABELS = {
   kader: "Kader (Spieler)",
   kasse: "Kasse",
   urlaubkrank: "Urlaub/Krank",
-  teamcloud: "Dateien",
   team: "Mannschaften & Umfragen"
 };
 
@@ -83,7 +80,7 @@ const ROLLEN_RECHTE = {
   "at-trainer": ["aufgaben", "gruppen"],
   foerdertrainer: [],
   nachwuchsleiter: ["kader", "team"],
-  betreuer: ["urlaubkrank", "teamcloud"],
+  betreuer: ["urlaubkrank"],
   kassenwart: ["kasse"],
   spieler: [],
   inaktiv: []
@@ -124,12 +121,6 @@ const APP_CHANGELOG = [
         ]
       },
       {
-        title: "Dateien",
-        items: [
-          "Tab „Dateien“ (TeamCloud): Dokumente und Bilder je Mannschaft hoch- und herunterladen."
-        ]
-      },
-      {
         title: "Rollen & Rechte",
         items: [
           "Kader-Spieler können mehrere Rollen bekommen (Trainer, Co-Trainer, Torwart-/Athletiktrainer, Betreuer, Kassenwart, Nachwuchsleiter, Fördertrainer u. a.) mit granularen Verwalten-Rechten je Bereich, statt nur Admin/Bearbeiter. Bearbeiten-Rechte auf Tool-Ebene werden über die Gruppenverwaltung der Tools-Übersicht vergeben.",
@@ -141,6 +132,17 @@ const APP_CHANGELOG = [
         title: "Speicherung",
         items: [
           "Automatische Nextcloud-Synchronisierung über die zentrale Anmeldung (Tools-Übersicht) — kein separates Passwort nötig; gleichzeitige Änderungen von zwei Geräten werden erkannt und gemeldet."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Dateien",
+        items: [
+          "Tab „Dateien“ (TeamCloud) entfernt — Dateien-Verwaltung wird nicht benötigt."
         ]
       }
     ]

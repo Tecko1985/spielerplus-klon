@@ -72,9 +72,10 @@ async function fetchTrainerProfiles() {
   return Array.isArray(body.profiles) ? body.profiles : [];
 }
 
-// ---------- TeamCloud (Binär-Upload über die dav-file-*-Gateway-Aktionen) ----------
+// ---------- Datei-Gateway (Binär-Upload über die dav-file-*-Gateway-Aktionen) ----------
 // Gleiches Muster wie E:\vereinskalender\db.js — dieselben Worker-Aktionen sind generisch
-// über DAV_APPS[app] geroutet, kein zusätzlicher admin-worker.js-Code nötig.
+// über DAV_APPS[app] geroutet, kein zusätzlicher admin-worker.js-Code nötig. Wird von
+// den Spielerfotos genutzt (siehe app.js).
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();

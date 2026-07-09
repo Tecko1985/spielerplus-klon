@@ -229,17 +229,6 @@ function normalizeAbwesenheit(a, kaderIds) {
     typ: d.typ === "krank" ? "krank" : "urlaub"
   };
 }
-function normalizeTeamCloudDatei(d) {
-  const x = d && typeof d === "object" ? d : {};
-  return {
-    id: typeof x.id === "string" ? x.id : uuid(),
-    name: typeof x.name === "string" ? x.name : "Datei",
-    mime: typeof x.mime === "string" ? x.mime : "application/octet-stream",
-    size: Number(x.size) || 0,
-    hochgeladenVon: typeof x.hochgeladenVon === "string" ? x.hochgeladenVon : "",
-    hochgeladenAm: typeof x.hochgeladenAm === "string" ? x.hochgeladenAm : ""
-  };
-}
 function normalizeKasse(k, kaderIds) {
   const d = k && typeof k === "object" ? k : {};
   return {
@@ -259,8 +248,7 @@ function normalizeTeam(t) {
     termine: Array.isArray(d.termine) ? d.termine.map((x) => normalizeTermin(x, kaderIds)) : [],
     umfragen: Array.isArray(d.umfragen) ? d.umfragen.map((x) => normalizeUmfrage(x, kaderIds)) : [],
     kasse: normalizeKasse(d.kasse, kaderIds),
-    abwesenheiten: Array.isArray(d.abwesenheiten) ? d.abwesenheiten.map((x) => normalizeAbwesenheit(x, kaderIds)).filter((a) => a.spielerId) : [],
-    teamCloud: Array.isArray(d.teamCloud) ? d.teamCloud.map(normalizeTeamCloudDatei) : []
+    abwesenheiten: Array.isArray(d.abwesenheiten) ? d.abwesenheiten.map((x) => normalizeAbwesenheit(x, kaderIds)).filter((a) => a.spielerId) : []
   };
 }
 // appData.meta.rollenRechte ist die admin-editierbare Live-Kopie der Rechte-Matrix
@@ -287,7 +275,7 @@ function normalizeData(data) {
 function seedTeam(name, farbe) {
   return {
     id: uuid(), name, farbe: farbe || "#1a56a0",
-    kader: [], termine: [], umfragen: [], abwesenheiten: [], teamCloud: [],
+    kader: [], termine: [], umfragen: [], abwesenheiten: [],
     kasse: { strafenkatalog: clone(DEFAULT_STRAFEN).map((s) => ({ id: uuid(), bezeichnung: s.bezeichnung, betrag: s.betrag })), buchungen: [] }
   };
 }
@@ -547,9 +535,9 @@ function renderDetail() {
   renderFahrgemeinschaft(team, termin);
 }
 
-// ---------- Spielerfotos (Blob-Cache über das TeamCloud-Datei-Gateway) ----------
-// fotoId zeigt auf dieselbe dav-file-*-Ablage wie TeamCloud (siehe db.js) — kein
-// eigener Speichermechanismus, und die Fotos landen NICHT in appData selbst (das wird
+// ---------- Spielerfotos (Blob-Cache über das Datei-Gateway) ----------
+// fotoId zeigt auf die dav-file-*-Ablage (siehe db.js) — kein eigener
+// Speichermechanismus, und die Fotos landen NICHT in appData selbst (das wird
 // bei jedem persist() komplett neu geladen/gespeichert, siehe saveNow/gatewaySave).
 // Client-seitig auf FOTO_MAX_DIMENSION verkleinert/komprimiert (siehe resizeImageFile).
 const fotoUrlCache = new Map();
@@ -1604,77 +1592,6 @@ function toggleBezahlt(id) {
   renderKasse();
 }
 
-// ---------- TeamCloud ----------
-function fmtBytes(n) {
-  if (n < 1024) return n + " B";
-  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
-  return (n / (1024 * 1024)).toFixed(1) + " MB";
-}
-function renderTeamCloud() {
-  const team = teamOr("no-team-teamcloud", ["teamcloud-list", "teamcloud-empty"]);
-  const manage = team ? hasRecht(team, "teamcloud") : false;
-  document.getElementById("btn-upload-teamcloud").classList.toggle("hidden", !manage);
-  if (!team) {
-    document.getElementById("teamcloud-list").innerHTML = "";
-    document.getElementById("teamcloud-empty").classList.add("hidden");
-    document.getElementById("teamcloud-quota").textContent = "";
-    return;
-  }
-  const dateien = team.teamCloud;
-  document.getElementById("teamcloud-empty").classList.toggle("hidden", dateien.length > 0);
-  const gesamt = dateien.reduce((sum, d) => sum + d.size, 0);
-  document.getElementById("teamcloud-quota").textContent = `${fmtBytes(gesamt)} von ${TEAMCLOUD_QUOTA_MB} MB belegt`;
-  document.getElementById("teamcloud-list").innerHTML = dateien.slice()
-    .sort((a, b) => (b.hochgeladenAm || "").localeCompare(a.hochgeladenAm || ""))
-    .map((d) => `
-    <div class="teamcloud-row">
-      <span class="tc-name" data-download-datei="${escapeHtml(d.id)}" title="Herunterladen">📄 ${escapeHtml(d.name)}</span>
-      <span class="tc-meta">${escapeHtml(fmtBytes(d.size))} · ${escapeHtml(d.hochgeladenVon || "?")}</span>
-      ${manage ? `<button class="icon-btn" data-remove-datei="${escapeHtml(d.id)}" title="Entfernen">×</button>` : ""}
-    </div>`).join("");
-}
-async function uploadTeamCloudDatei(file) {
-  const team = currentTeam();
-  if (!team || !file || !hasRecht(team, "teamcloud")) return;
-  try {
-    const meta = await gatewayUploadFile(file);
-    meta.hochgeladenVon = currentUser && (currentUser.vorname || currentUser.username) ? (currentUser.vorname || currentUser.username) : "";
-    meta.hochgeladenAm = new Date().toISOString();
-    team.teamCloud.push(meta);
-    await saveNow();
-    renderTeamCloud();
-  } catch (e) {
-    alert("Hochladen fehlgeschlagen: " + e.message);
-  }
-}
-async function downloadTeamCloudDatei(id) {
-  const team = currentTeam();
-  const d = team && team.teamCloud.find((x) => x.id === id);
-  if (!d) return;
-  try {
-    const blob = await gatewayFetchFileBlob(id);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = d.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  } catch (e) {
-    alert("Download fehlgeschlagen: " + e.message);
-  }
-}
-async function removeTeamCloudDatei(id) {
-  const team = currentTeam();
-  if (!team || !hasRecht(team, "teamcloud")) return;
-  if (!confirm("Diese Datei wirklich entfernen?")) return;
-  team.teamCloud = team.teamCloud.filter((d) => d.id !== id);
-  await saveNow();
-  await gatewayDeleteFile(id);
-  renderTeamCloud();
-}
-
 // ---------- Einstellungen: Mannschaften ----------
 function renderTeamAdmin() {
   const manage = hasRecht(currentTeam(), "team");
@@ -1829,7 +1746,6 @@ function renderAll() {
   renderStatistik();
   renderUmfragen();
   renderKasse();
-  renderTeamCloud();
   renderTeamAdmin();
   renderKaderRollenUebersicht();
   renderRechteMatrix();
@@ -1848,7 +1764,6 @@ function switchTab(tab) {
   if (tab === "statistik") renderStatistik();
   if (tab === "umfragen") renderUmfragen();
   if (tab === "kasse") renderKasse();
-  if (tab === "teamcloud") renderTeamCloud();
   if (tab === "einstellungen") { renderTeamAdmin(); renderKaderRollenUebersicht(); renderRechteMatrix(); renderMeta(); renderVersionInfo(); }
 }
 
@@ -2090,17 +2005,6 @@ function setupListeners() {
     if (btn) { kasseKategorieFilter = btn.dataset.kategorie; renderKasse(); }
   });
   document.getElementById("kasse-stornos-toggle").addEventListener("change", (e) => { kasseZeigeStornos = e.target.checked; renderKasse(); });
-
-  // TeamCloud
-  document.getElementById("teamcloud-input").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if (file) uploadTeamCloudDatei(file);
-  });
-  document.getElementById("teamcloud-list").addEventListener("click", (e) => {
-    const dl = e.target.closest("[data-download-datei]"); if (dl) { downloadTeamCloudDatei(dl.dataset.downloadDatei); return; }
-    const rm = e.target.closest("[data-remove-datei]"); if (rm) removeTeamCloudDatei(rm.dataset.removeDatei);
-  });
 
   // Einstellungen: Mannschaften
   document.getElementById("btn-new-team").addEventListener("click", () => openTeamModal(null));
