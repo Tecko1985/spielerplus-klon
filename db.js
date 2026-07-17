@@ -64,6 +64,13 @@ async function fetchMe() {
   return gatewayRequest({ action: "me", app: GATEWAY_APP_ID });
 }
 
+// Öffnet ein kurzlebiges Registrierungsfenster für eine Mannschaft (Spieler-
+// Onboarding per QR/Link, siehe registrieren.html). Liefert das signierte Token;
+// es wird nirgends gespeichert und läuft nach ttlSeconds von selbst ab.
+async function gatewayRegOeffnen(teamId) {
+  return gatewayRequest({ action: "km-reg-oeffnen", teamId });
+}
+
 // Zentrales Trainerprofil (Lizenz + Mannschaften) ALLER Nutzer — für die read-only
 // Anzeige am Kader-Eintrag (Join über linkedUsername), nicht Teil des Kadermanager-
 // eigenen rollen/ROLLEN_RECHTE-Berechtigungssystems.

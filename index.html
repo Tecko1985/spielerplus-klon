@@ -70,8 +70,21 @@
         <div class="toolbar">
           <h2 style="margin:0;color:var(--blue);font-size:17px;" id="kader-title">Kader</h2>
           <div class="toolbar-right">
+            <button class="btn secondary small editor-only hidden" id="btn-reg-oeffnen" data-bereich="kader">📱 Spieler anmelden</button>
             <button class="btn small editor-only hidden" id="btn-new-spieler" data-bereich="kader">+ Spieler</button>
           </div>
+        </div>
+        <!-- Registrierungsfenster: erscheint nur nach Klick auf „Spieler anmelden“.
+             Der Trainer zeigt den QR im Training oder teilt den Link in die
+             Mannschaftsgruppe; beides trägt dasselbe kurzlebige Token. -->
+        <div class="card hidden" id="reg-panel">
+          <div class="toolbar" style="margin-bottom:10px;">
+            <h2 style="margin:0;color:var(--blue);font-size:16px;">Spieler anmelden</h2>
+            <div class="toolbar-right">
+              <button class="btn secondary small" id="btn-reg-schliessen">Schließen</button>
+            </div>
+          </div>
+          <div id="reg-inhalt"></div>
         </div>
         <div id="kader-list"></div>
         <div class="empty-state hidden" id="kader-empty">Noch keine Spieler im Kader.</div>
@@ -472,7 +485,7 @@
   </div>
 
   <script src="config.js?v=1.0"></script>
-  <script src="db.js?v=1.0"></script>
-  <script src="app.js?v=1.0"></script>
+  <script src="db.js?v=1.1"></script>
+  <script src="app.js?v=1.1"></script>
 </body>
 </html>

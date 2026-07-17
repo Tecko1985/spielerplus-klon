@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⚽ Anmelden – Kadermanager</title>
+<meta name="theme-color" content="#1a56a0" />
+<!-- Bewusst eigenes, schlankes CSS statt style.css der App: diese Seite wird von
+     Spielern auf dem Handy in der Kabine geöffnet, oft über mobile Daten, und
+     zeigt genau drei Schritte. Sie soll nicht 24 KB App-CSS laden, von dem sie
+     nichts braucht. Farben/Radien 1:1 aus style.css übernommen. -->
+<style>
+  :root {
+    --green: #2d8c4e; --green-light: #eaf6ef;
+    --red: #c0392b; --red-light: #fdecea;
+    --blue: #1a56a0; --blue-light: #e8f0fb;
+    --gray: #f4f5f7; --border: #dde1e8;
+    --text: #1e2330; --muted: #6b7280; --white: #ffffff;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--gray); color: var(--text);
+    display: flex; justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 460px; }
+  .card {
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 14px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .logo { width: 56px; height: 56px; object-fit: contain; display: block; margin: 0 auto 10px; }
+  /* Auswahlliste: große Tap-Ziele (48px+), weil das auf einem Handy mit
+     Fußballschuhen an den Händen bedient wird, nicht mit der Maus. */
+  .spieler-btn {
+    display: block; width: 100%; text-align: left;
+    padding: 14px 16px; margin-bottom: 8px; min-height: 50px;
+    background: var(--white); border: 2px solid var(--border);
+    border-radius: var(--radius); font-size: 16px; font-weight: 600;
+    color: var(--text); cursor: pointer;
+  }
+  .spieler-btn:hover { border-color: var(--blue); background: var(--blue-light); }
+  .spieler-btn.gewaehlt { border-color: var(--blue); background: var(--blue-light); }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+  input[type="password"] {
+    width: 100%; padding: 12px 14px; font-size: 16px; /* 16px: verhindert Auto-Zoom auf iOS */
+    border: 1px solid var(--border); border-radius: 8px; background: var(--white); color: var(--text);
+  }
+  .btn {
+    width: 100%; padding: 14px; margin-top: 16px;
+    background: var(--blue); color: var(--white);
+    border: none; border-radius: 8px;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .hinweis { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .fehler {
+    background: var(--red-light); color: var(--red);
+    padding: 12px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 12px;
+  }
+  .erfolg {
+    background: var(--green-light); color: var(--green);
+    padding: 12px 14px; border-radius: 8px; font-size: 15px; font-weight: 600;
+  }
+  .zeit { font-size: 13px; color: var(--muted); text-align: center; margin-top: 10px; }
+  .versteckt { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <img src="logo.png" alt="" class="logo" />
+    <h1 id="titel">Beim Kadermanager anmelden</h1>
+    <p class="sub" id="untertitel">Einen Moment…</p>
+    <div id="fehler" class="fehler versteckt"></div>
+  </div>
+
+  <!-- Schritt 1: Wer bist du? -->
+  <div class="card versteckt" id="schritt-spieler">
+    <h1>Wer bist du?</h1>
+    <p class="sub">Tippe auf deinen Namen.</p>
+    <div id="spieler-liste"></div>
+  </div>
+
+  <!-- Schritt 2: Passwort -->
+  <div class="card versteckt" id="schritt-passwort">
+    <h1 id="pw-titel">Passwort wählen</h1>
+    <p class="sub">Damit meldest du dich künftig an. Merk es dir gut.</p>
+    <label for="pw1">Passwort</label>
+    <input type="password" id="pw1" autocomplete="new-password" />
+    <label for="pw2">Passwort wiederholen</label>
+    <input type="password" id="pw2" autocomplete="new-password" />
+    <p class="hinweis">Mindestens 12 Zeichen, mit Groß- und Kleinbuchstaben und einer Zahl oder einem Sonderzeichen. Tipp: Denk dir einen Satz aus, den nur du kennst.</p>
+    <button class="btn" id="btn-fertig">Konto anlegen</button>
+  </div>
+
+  <!-- Schritt 3: Fertig -->
+  <div class="card versteckt" id="schritt-fertig">
+    <div class="erfolg" id="fertig-text"></div>
+    <button class="btn" id="btn-weiter">Weiter zum Kadermanager</button>
+  </div>
+
+  <p class="zeit versteckt" id="zeit"></p>
+</div>
+
+<script>
+// Standalone-Seite: bewusst ohne db.js/app.js. Der Spieler hat hier noch KEIN
+// Konto und keine Sitzung -- das Registrierungs-Token aus dem Link ist alles,
+// was er hat. Deshalb auch nur die drei km-reg-*-Aktionen, kein Gateway-Load.
+const GATEWAY_URL = "https://landingpage.michel-brunner.workers.dev";
+const TOKEN_STORAGE_KEY = "tu_session_token";
+
+// Token aus dem Hash, nicht aus dem Query-String: der Fragment-Teil wird von
+// Browsern NICHT an den Server geschickt und landet damit nicht in fremden
+// Zugriffslogs oder im Referer, wenn die Seite später weiterverlinkt.
+const regToken = decodeURIComponent((location.hash || "").replace(/^#/, "").trim());
+
+let gewaehlterSpieler = null;
+let ablaufAt = 0;
+
+const $ = (id) => document.getElementById(id);
+const zeige = (id, an) => $(id).classList.toggle("versteckt", !an);
+
+function fehler(text) {
+  const el = $("fehler");
+  el.textContent = text;
+  el.classList.remove("versteckt");
+}
+
+async function api(action, payload) {
+  const resp = await fetch(GATEWAY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || ("Fehler " + resp.status));
+  return data;
+}
+
+function starteCountdown() {
+  const el = $("zeit");
+  el.classList.remove("versteckt");
+  const tick = () => {
+    const restMs = ablaufAt - Date.now();
+    if (restMs <= 0) {
+      el.textContent = "Der Anmelde-Link ist abgelaufen.";
+      return;
+    }
+    const min = Math.floor(restMs / 60000);
+    const sek = Math.floor((restMs % 60000) / 1000);
+    el.textContent = `Noch ${min}:${String(sek).padStart(2, "0")} Minuten Zeit`;
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+async function start() {
+  if (!regToken) {
+    $("untertitel").textContent = "";
+    fehler("Dieser Link ist unvollständig. Bitte scanne den QR-Code deines Trainers noch einmal.");
+    return;
+  }
+  try {
+    const info = await api("km-reg-info", { token: regToken });
+    $("titel").textContent = info.teamName || "Kadermanager";
+    $("untertitel").textContent = "Melde dich für deine Mannschaft an.";
+    ablaufAt = info.expiresAt || 0;
+    if (ablaufAt) starteCountdown();
+
+    if (!info.spieler || info.spieler.length === 0) {
+      fehler("In diesem Kader ist gerade kein Platz mehr frei. Sprich bitte deinen Trainer an.");
+      return;
+    }
+    const liste = $("spieler-liste");
+    info.spieler.forEach((s) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "spieler-btn";
+      btn.textContent = s.name;
+      btn.addEventListener("click", () => {
+        gewaehlterSpieler = s;
+        Array.from(liste.children).forEach((c) => c.classList.remove("gewaehlt"));
+        btn.classList.add("gewaehlt");
+        $("pw-titel").textContent = `Hallo ${s.name.split(" ")[0]}!`;
+        zeige("schritt-passwort", true);
+        $("schritt-passwort").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      liste.appendChild(btn);
+    });
+    zeige("schritt-spieler", true);
+  } catch (e) {
+    $("untertitel").textContent = "";
+    fehler(e.message);
+  }
+}
+
+$("btn-fertig").addEventListener("click", async () => {
+  $("fehler").classList.add("versteckt");
+  const pw1 = $("pw1").value;
+  const pw2 = $("pw2").value;
+  if (pw1 !== pw2) { fehler("Die beiden Passwörter sind nicht gleich."); return; }
+  if (!gewaehlterSpieler) { fehler("Bitte wähle zuerst deinen Namen aus."); return; }
+
+  const btn = $("btn-fertig");
+  btn.disabled = true;
+  btn.textContent = "Wird angelegt…";
+  try {
+    const res = await api("km-reg-abschliessen", {
+      token: regToken, spielerId: gewaehlterSpieler.id, password: pw1
+    });
+    // Session-Token in denselben Storage-Key wie alle Tools -- der Spieler ist
+    // damit sofort angemeldet und muss sich nicht direkt nochmal einloggen.
+    try { localStorage.setItem(TOKEN_STORAGE_KEY, res.token); } catch (_) {}
+    zeige("schritt-spieler", false);
+    zeige("schritt-passwort", false);
+    zeige("zeit", false);
+    $("fertig-text").textContent = res.verknuepft
+      ? `Fertig, ${gewaehlterSpieler.name.split(" ")[0]}! Dein Benutzername ist „${res.username}“.`
+      : (res.hinweis || "Dein Konto ist angelegt.");
+    zeige("schritt-fertig", true);
+  } catch (e) {
+    fehler(e.message);
+    btn.disabled = false;
+    btn.textContent = "Konto anlegen";
+  }
+});
+
+$("btn-weiter").addEventListener("click", () => { location.href = "index.html"; });
+
+start();
+</script>
+</body>
+</html>

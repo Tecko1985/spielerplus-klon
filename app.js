@@ -1077,6 +1077,125 @@ function removeAbwesenheit(id) {
 }
 
 // ---------- Kader ----------
+// ---------- Spieler-Registrierung (QR/Link, siehe registrieren.html) ----------
+// Onboarding ohne Zettelwirtschaft: der Trainer öffnet im Training ein
+// 15-Minuten-Fenster, die Spieler tragen sich selbst ein. Der Auth-Faktor ist,
+// dass sie in der Kabine stehen -- deshalb sieht der Trainer die Neuzugänge live
+// (regPollTimer) und merkt sofort, wenn sich jemand als ein anderer einträgt.
+let regPollTimer = null;
+let regCountdownTimer = null;
+let regAblaufAt = 0;
+
+function schliesseRegPanel() {
+  document.getElementById("reg-panel").classList.add("hidden");
+  if (regPollTimer) { clearInterval(regPollTimer); regPollTimer = null; }
+  if (regCountdownTimer) { clearTimeout(regCountdownTimer); regCountdownTimer = null; }
+  regAblaufAt = 0;
+}
+
+async function oeffneRegistrierung() {
+  const team = currentTeam();
+  if (!team) { alert("Bitte zuerst eine Mannschaft auswählen."); return; }
+  if (!hasRecht(team, "kader")) return;
+
+  const panel = document.getElementById("reg-panel");
+  const inhalt = document.getElementById("reg-inhalt");
+  panel.classList.remove("hidden");
+  inhalt.innerHTML = `<p class="muted">Anmelde-Link wird erstellt…</p>`;
+
+  let res;
+  try {
+    res = await gatewayRegOeffnen(team.id);
+  } catch (e) {
+    inhalt.innerHTML = `<p class="muted">Konnte nicht geöffnet werden: ${escapeHtml(e.message)}</p>`;
+    return;
+  }
+
+  // Absolute URL aus der aktuellen Adresse ableiten, statt sie hart zu setzen:
+  // funktioniert damit lokal (localhost:8780) genauso wie live auf GitHub Pages.
+  const url = new URL("registrieren.html", location.href).href + "#" + encodeURIComponent(res.token);
+  regAblaufAt = res.expiresAt || 0;
+
+  inhalt.innerHTML = `
+    <p style="margin:0 0 10px;">Schick den Spielern diesen Link — am einfachsten direkt in die Mannschaftsgruppe. Er gilt <strong>${Math.round((res.ttlSeconds || 900) / 60)} Minuten</strong> und öffnet nur diesen Kader.</p>
+    <div class="toolbar" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn small" id="btn-reg-teilen">Link teilen</button>
+      <button class="btn secondary small" id="btn-reg-kopieren">Link kopieren</button>
+      <span class="muted" id="reg-countdown"></span>
+    </div>
+    <p class="muted" id="reg-status" style="margin-top:12px;"></p>
+  `;
+
+  document.getElementById("btn-reg-kopieren").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      document.getElementById("btn-reg-kopieren").textContent = "Kopiert ✓";
+    } catch (_) {
+      // Clipboard-API braucht HTTPS/Nutzergeste und kann trotzdem scheitern --
+      // dann den Link wenigstens sichtbar machen, statt nichts zu tun.
+      prompt("Link kopieren:", url);
+    }
+  });
+  const teilenBtn = document.getElementById("btn-reg-teilen");
+  if (navigator.share) {
+    teilenBtn.addEventListener("click", () => {
+      navigator.share({ title: "Kadermanager-Anmeldung", text: `Melde dich beim Kadermanager an (${team.name}):`, url }).catch(() => {});
+    });
+  } else {
+    // Web Share gibt es auf dem Desktop meist nicht -- dort ist Kopieren der Weg.
+    teilenBtn.classList.add("hidden");
+  }
+
+  starteRegCountdown();
+  starteRegPolling(team.id);
+}
+
+function starteRegCountdown() {
+  const el = document.getElementById("reg-countdown");
+  const tick = () => {
+    if (!el.isConnected) return;
+    const rest = regAblaufAt - Date.now();
+    if (rest <= 0) {
+      el.textContent = "Fenster abgelaufen";
+      if (regPollTimer) { clearInterval(regPollTimer); regPollTimer = null; }
+      return;
+    }
+    const min = Math.floor(rest / 60000);
+    const sek = Math.floor((rest % 60000) / 1000);
+    el.textContent = `Noch ${min}:${String(sek).padStart(2, "0")}`;
+    regCountdownTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+
+// Live-Rückmeldung für den Trainer: alle 5s neu laden und zeigen, wer seit dem
+// Öffnen dazugekommen ist. Das ist die eigentliche Kontrolle des Verfahrens --
+// ein falscher Name fällt hier sofort auf, solange alle noch im Raum stehen.
+function starteRegPolling(teamId) {
+  const vorher = new Set((currentTeam().kader || []).filter((s) => s.linkedUsername).map((s) => s.id));
+  const statusEl = document.getElementById("reg-status");
+  statusEl.textContent = "Wartet auf Anmeldungen…";
+  if (regPollTimer) clearInterval(regPollTimer);
+  regPollTimer = setInterval(async () => {
+    if (!statusEl.isConnected) { clearInterval(regPollTimer); regPollTimer = null; return; }
+    try {
+      const data = await gatewayLoad();
+      if (!data) return;
+      const team = (data.teams || []).find((t) => t.id === teamId);
+      if (!team) return;
+      const neue = (team.kader || []).filter((s) => s.linkedUsername && !vorher.has(s.id));
+      statusEl.textContent = neue.length
+        ? `✓ Angemeldet: ${neue.map((s) => s.name).join(", ")}`
+        : "Wartet auf Anmeldungen…";
+      // Den lokalen Stand mitziehen, damit die Kaderliste im Hintergrund die
+      // neuen Verknüpfungen zeigt und ein späteres persist() sie nicht
+      // überschreibt (dav-save schickt appData komplett).
+      appData = normalizeData(data);
+      renderKader();
+    } catch (_) { /* Polling ist best effort, Fehler nicht dem Trainer vorwerfen */ }
+  }, 5000);
+}
+
 function renderKader() {
   const team = teamOr("no-team-kader", ["kader-claim-hint", "kader-list", "kader-empty"]);
   const listEl = document.getElementById("kader-list");
@@ -1933,6 +2052,8 @@ function setupListeners() {
 
   // Kader
   document.getElementById("btn-new-spieler").addEventListener("click", () => openSpielerModal(null));
+  document.getElementById("btn-reg-oeffnen").addEventListener("click", oeffneRegistrierung);
+  document.getElementById("btn-reg-schliessen").addEventListener("click", schliesseRegPanel);
   document.getElementById("kader-list").addEventListener("click", (e) => {
     const claim = e.target.closest("[data-claim]"); if (claim) { claimSpieler(claim.dataset.claim); return; }
     const unclaim = e.target.closest("[data-unclaim]"); if (unclaim) { unclaimSpieler(unclaim.dataset.unclaim); return; }
