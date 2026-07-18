@@ -64,6 +64,14 @@ async function fetchMe() {
   return gatewayRequest({ action: "me", app: GATEWAY_APP_ID });
 }
 
+// Selbstbedienung ohne Bearbeiten-Recht ("Briefschlitz", siehe handleKmSelf im
+// admin-worker). Schickt nur die eine Änderung statt der ganzen Datei — für Spieler
+// der EINZIGE Schreibweg, weil dav-save für den Kadermanager Bearbeiten-Recht
+// verlangt und sie das bewusst nicht haben.
+async function gatewaySelf(nachricht) {
+  return gatewayRequest({ action: "km-self", ...nachricht });
+}
+
 // Öffnet ein kurzlebiges Registrierungsfenster für eine Mannschaft (Spieler-
 // Onboarding per QR/Link, siehe registrieren.html). Liefert das signierte Token;
 // es wird nirgends gespeichert und läuft nach ttlSeconds von selbst ab.

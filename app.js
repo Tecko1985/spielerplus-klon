@@ -447,7 +447,10 @@ function setMyStatus(terminId, status) {
   const myId = myPlayerId(team);
   if (!myId || !terminIstKommend(termin)) return;
   applyStatus(termin, myId, status);
-  persist();
+  // applyStatus togglet: gleicher Status erneut -> Eintrag weg ("offen"). Dem Server
+  // deshalb den TATSAECHLICHEN Stand danach schicken, nicht den geklickten Wert.
+  const neu = termin.teilnahme[myId] ? termin.teilnahme[myId].status : null;
+  persistSelbst({ art: "teilnahme", terminId, status: neu });
   renderTermine();
   if (detailTerminId === terminId) renderDetail();
 }
@@ -763,7 +766,7 @@ function toggleAufgabe(aufgabeId, spielerId) {
   if (!a || !a.spielerIds.includes(spielerId)) return;
   if (!(hasRecht(team, "aufgaben") || spielerId === myPlayerId(team))) return;
   if (a.erledigt[spielerId]) delete a.erledigt[spielerId]; else a.erledigt[spielerId] = true;
-  persist();
+  persistSelbst({ art: "aufgabe", terminId: detailTerminId, aufgabeId, erledigt: !!a.erledigt[spielerId] });
   renderAufgaben(team, termin);
 }
 function removeAufgabe(aufgabeId) {
@@ -890,7 +893,7 @@ function fgAnbieten() {
   const plaetze = Math.max(1, parseInt(val("fg-plaetze"), 10) || 1);
   termin.fahrgemeinschaft.angebote = termin.fahrgemeinschaft.angebote.filter((a) => a.spielerId !== myId);
   termin.fahrgemeinschaft.angebote.push({ spielerId: myId, plaetze });
-  persist();
+  persistSelbst({ art: "fahrt-angebot", terminId: detailTerminId, plaetze });
   renderFahrgemeinschaft(team, termin);
 }
 function fgSuchen() {
@@ -900,7 +903,7 @@ function fgSuchen() {
   const termin = team.termine.find((t) => t.id === detailTerminId);
   if (!termin) return;
   if (!termin.fahrgemeinschaft.gesuche.includes(myId)) termin.fahrgemeinschaft.gesuche.push(myId);
-  persist();
+  persistSelbst({ art: "fahrt-gesuch", terminId: detailTerminId, an: true });
   renderFahrgemeinschaft(team, termin);
 }
 function fgEntferneAngebot(spielerId) {
@@ -910,7 +913,9 @@ function fgEntferneAngebot(spielerId) {
   if (!termin) return;
   if (!(hasRecht(team, "termine") || spielerId === myPlayerId(team))) return;
   termin.fahrgemeinschaft.angebote = termin.fahrgemeinschaft.angebote.filter((a) => a.spielerId !== spielerId);
-  persist();
+  // plaetze 0 = eigenes Angebot zurückziehen. Entfernt ein Bearbeiter ein FREMDES
+  // Angebot, greift in persistSelbst ohnehin der normale dav-save-Weg.
+  persistSelbst({ art: "fahrt-angebot", terminId: detailTerminId, plaetze: 0 });
   renderFahrgemeinschaft(team, termin);
 }
 function fgEntferneGesuch(spielerId) {
@@ -920,7 +925,7 @@ function fgEntferneGesuch(spielerId) {
   if (!termin) return;
   if (!(hasRecht(team, "termine") || spielerId === myPlayerId(team))) return;
   termin.fahrgemeinschaft.gesuche = termin.fahrgemeinschaft.gesuche.filter((id) => id !== spielerId);
-  persist();
+  persistSelbst({ art: "fahrt-gesuch", terminId: detailTerminId, an: false });
   renderFahrgemeinschaft(team, termin);
 }
 
@@ -1058,8 +1063,13 @@ function addAbwesenheit() {
   const von = val("uk-von"), bis = val("uk-bis");
   if (!von || !bis) { alert("Bitte Zeitraum (von/bis) angeben."); return; }
   if (bis < von) { alert("„Bis“ darf nicht vor „Von“ liegen."); return; }
-  team.abwesenheiten.push({ id: uuid(), spielerId, von, bis, grund: val("uk-grund").trim(), typ: val("uk-typ") });
-  persist();
+  // Id lokal erzeugen und mitschicken, damit der Server denselben Schlüssel nutzt --
+  // sonst zeigt die Liste eine Id, die es serverseitig nicht gibt, und ein sofortiges
+  // Löschen liefe ins Leere.
+  const neueId = uuid();
+  const grund = val("uk-grund").trim(), typ = val("uk-typ");
+  team.abwesenheiten.push({ id: neueId, spielerId, von, bis, grund, typ });
+  persistSelbst({ art: "urlaub-add", id: neueId, von, bis, grund, typ });
   renderUrlaubKrank();
   renderTermine();
   if (detailTerminId) renderDetail();
@@ -1070,7 +1080,7 @@ function removeAbwesenheit(id) {
   const a = team.abwesenheiten.find((x) => x.id === id);
   if (!a || !(hasRecht(team, "urlaubkrank") || a.spielerId === myPlayerId(team))) return;
   team.abwesenheiten = team.abwesenheiten.filter((x) => x.id !== id);
-  persist();
+  persistSelbst({ art: "urlaub-del", abwesenheitId: id });
   renderUrlaubKrank();
   renderTermine();
   if (detailTerminId) renderDetail();
@@ -1261,7 +1271,7 @@ function claimSpieler(id) {
   // pro Team nur einen eigenen Spieler: bestehende eigene Verknüpfung lösen
   team.kader.forEach((s) => { if (s.linkedUsername && s.linkedUsername.toLowerCase() === u.toLowerCase()) s.linkedUsername = ""; });
   target.linkedUsername = u;
-  persist();
+  persistSelbst({ art: "claim", spielerId: id });
   renderKader();
   renderTermine();
 }
@@ -1271,7 +1281,7 @@ function unclaimSpieler(id) {
   const target = findSpieler(team, id);
   if (!target) return;
   target.linkedUsername = "";
-  persist();
+  persistSelbst({ art: "unclaim" });
   renderKader();
   renderTermine();
 }
@@ -1491,7 +1501,7 @@ function vote(umfrageId, optionId) {
     else { cur.length = 0; cur.push(optionId); }
   }
   if (cur.length) u.stimmen[myId] = cur; else delete u.stimmen[myId];
-  persist();
+  persistSelbst({ art: "umfrage", umfrageId, optionIds: cur });
   renderUmfragen();
 }
 function openUmfrageModal(id) {
@@ -1906,6 +1916,39 @@ function persist() {
   clearTimeout(persistTimer);
   setSaveStatus("Änderung noch nicht gespeichert…", "pending");
   persistTimer = setTimeout(doPersist, 300);
+}
+
+// Nur-Lesen-Nutzer (typisch: ein Spieler) dürfen den Kadermanager nicht per
+// dav-save schreiben — das würde die komplette Datei zurückschreiben und ist für
+// sie serverseitig gesperrt. Ihre eigenen Einträge speichern sie stattdessen über
+// die schmale km-self-Aktion ("Briefschlitz").
+function nurSelbstbedienung() {
+  return !!currentUser && !currentUser.isAdmin && !currentUser.canEdit;
+}
+
+// Speichert eine Selbstbedienungs-Änderung auf dem passenden Weg. Der lokale Stand
+// wurde vom Aufrufer bereits geändert (damit die Oberfläche sofort reagiert); hier
+// geht es nur noch darum, WIE das zum Server kommt.
+// Bei Fehlschlag wird neu geladen, damit die Anzeige nicht dauerhaft etwas zeigt,
+// das serverseitig nie angekommen ist.
+function persistSelbst(nachricht) {
+  if (!nurSelbstbedienung()) { persist(); return; }
+  const team = currentTeam();
+  if (!team) return;
+  clearTimeout(persistTimer);
+  setSaveStatus("Speichern…", "pending");
+  gatewaySelf(Object.assign({ teamId: team.id }, nachricht))
+    .then(() => {
+      const t = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      setSaveStatus("Gespeichert " + t, "ok");
+    })
+    .catch(async (e) => {
+      if (e instanceof NotLoggedInError) { showConnectScreen("Sitzung abgelaufen — bitte neu anmelden."); return; }
+      console.error("Selbstbedienung fehlgeschlagen", e);
+      setSaveStatus("Nicht gespeichert", "error");
+      alert("Konnte nicht gespeichert werden: " + e.message);
+      await reloadAfterConflict();
+    });
 }
 async function saveNow() { clearTimeout(persistTimer); return doPersist(); }
 async function doPersist() {
