@@ -91,6 +91,18 @@ const ROLLEN_RECHTE = {
 
 const APP_CHANGELOG = [
   {
+    version: "1.2",
+    groups: [
+      {
+        title: "Speichern",
+        items: [
+          "Beim zügigen Bearbeiten – etwa beim Tippen im Spielbericht, beim Ändern des Strafenkatalogs in der Mannschaftskasse oder beim schnellen Anlegen mehrerer Termine – erschien wiederholt die Meldung, die Daten seien zwischenzeitlich auf einem anderen Gerät geändert worden, obwohl niemand sonst gearbeitet hat. Die zuletzt gemachte Eingabe ging dabei verloren.",
+          "Es wird jetzt immer nur ein Speichervorgang gleichzeitig ausgeführt; Änderungen, die währenddessen anfallen, werden unmittelbar danach automatisch nachgespeichert."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.1",
     groups: [
       {
