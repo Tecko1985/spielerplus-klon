@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>⚽ Kadermanager</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.0" />
+<link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body>
 
@@ -160,13 +160,13 @@
       <section class="tab-section" id="tab-einstellungen">
         <div class="card">
           <div class="toolbar">
-            <h2 style="margin:0;color:var(--blue);font-size:17px;">Mannschaften</h2>
+            <h2 style="margin:0;color:var(--blue);font-size:17px;">Mannschaften &amp; Gruppen</h2>
             <div class="toolbar-right">
-              <button class="btn small editor-only hidden" id="btn-new-team" data-bereich="team">+ Mannschaft</button>
+              <button class="btn small editor-only hidden" id="btn-new-team" data-bereich="team">+ Mannschaft/Gruppe</button>
             </div>
           </div>
           <div id="team-admin-list"></div>
-          <p class="muted editor-only hidden" id="team-admin-empty" style="margin-top:8px;">Noch keine Mannschaft — oben „+ Mannschaft“ anlegen.</p>
+          <p class="muted editor-only hidden" id="team-admin-empty" style="margin-top:8px;">Noch keine Mannschaft — oben „+ Mannschaft/Gruppe“ anlegen.</p>
         </div>
         <div class="card">
           <h2 id="rechte-kader-title">Rollen im Kader</h2>
@@ -204,6 +204,14 @@
       <div class="modal-body">
         <form id="team-form">
           <div class="form-grid">
+            <div class="form-field wide">
+              <label>Art</label>
+              <div class="day-switch" id="tf-typ">
+                <button type="button" data-typ="mannschaft" class="active">Mannschaft</button>
+                <button type="button" data-typ="gruppe">Gruppe</button>
+              </div>
+              <p class="muted" id="tf-typ-hinweis" style="margin:6px 0 0;font-size:13px;"></p>
+            </div>
             <div class="form-field"><label>Name *</label><input type="text" id="tf-name" placeholder="z. B. A-Jugend" /></div>
             <div class="form-field"><label>Farbe</label><input type="color" id="tf-farbe" value="#1a56a0" /></div>
           </div>
@@ -228,6 +236,11 @@
       </div>
       <div class="modal-body">
         <form id="spieler-form">
+          <div class="form-field wide hidden" id="pf-uebernehmen-wrap">
+            <label for="pf-uebernehmen">Aus bestehender Mannschaft übernehmen</label>
+            <select id="pf-uebernehmen"></select>
+            <p class="muted" style="margin:6px 0 0;font-size:13px;">Übernimmt Name und Kontoverknüpfung, damit der Spieler in beiden Kadern dieselbe Person ist.</p>
+          </div>
           <div class="form-grid">
             <div class="form-field"><label>Name *</label><input type="text" id="pf-name" placeholder="Vor- und Nachname" /></div>
             <div class="form-field"><label>Position</label><input type="text" id="pf-position" placeholder="z. B. Tor, Abwehr" /></div>
@@ -346,12 +359,12 @@
           <button type="button" class="btn small secondary" id="btn-add-aufgabe">+ Aufgabe</button>
         </div>
 
-        <h3 class="detail-subhead">Gruppen</h3>
+        <h3 class="detail-subhead">Trainingsgruppen</h3>
         <div id="detail-gruppen"></div>
         <div class="inline-add-row editor-only hidden" id="gruppe-add-row" data-bereich="gruppen">
-          <input type="text" id="gf-name" placeholder="Gruppenname, z. B. Torhüter" />
+          <input type="text" id="gf-name" placeholder="Name, z. B. Torhüter" />
           <select id="gf-spieler" multiple size="3"></select>
-          <button type="button" class="btn small secondary" id="btn-add-gruppe">+ Gruppe</button>
+          <button type="button" class="btn small secondary" id="btn-add-gruppe">+ Trainingsgruppe</button>
         </div>
 
         <div id="detail-spielbericht-wrap" class="hidden">
@@ -484,9 +497,9 @@
     </div>
   </div>
 
-  <script src="qrcode.js?v=1.0"></script>
-  <script src="config.js?v=1.0"></script>
-  <script src="db.js?v=1.0"></script>
-  <script src="app.js?v=1.0"></script>
+  <script src="qrcode.js?v=1.1"></script>
+  <script src="config.js?v=1.1"></script>
+  <script src="db.js?v=1.1"></script>
+  <script src="app.js?v=1.1"></script>
 </body>
 </html>

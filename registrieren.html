@@ -86,6 +86,19 @@
     <div id="spieler-liste"></div>
   </div>
 
+  <!-- Schritt 2a: schon angemeldet — bestätigen statt neues Konto anlegen.
+       Bewusst ein eigener Klick und keine stille Verknüpfung: das hier passiert im
+       Training auf herumgereichten Handys, und ein fremdes Token im Browser würde
+       den Kaderplatz sonst wortlos an den falschen Account hängen. -->
+  <div class="card versteckt" id="schritt-bestaetigen">
+    <h1>Schon angemeldet</h1>
+    <p class="sub">Dein Konto wird mit diesem Kaderplatz verbunden — ein zweites Konto brauchst du nicht.</p>
+    <p style="margin:0 0 4px;">Angemeldet als</p>
+    <p style="margin:0 0 4px;font-size:18px;font-weight:700;" id="bestaetigen-name"></p>
+    <button class="btn" id="btn-verknuepfen">Ja, das bin ich</button>
+    <p class="hinweis">Nicht du? <a href="#" id="btn-abmelden">Abmelden und eigenes Konto anlegen</a></p>
+  </div>
+
   <!-- Schritt 2: Passwort -->
   <div class="card versteckt" id="schritt-passwort">
     <h1 id="pw-titel">Passwort wählen</h1>
@@ -121,6 +134,10 @@ const regToken = decodeURIComponent((location.hash || "").replace(/^#/, "").trim
 
 let gewaehlterSpieler = null;
 let ablaufAt = 0;
+// Gesetzt, wenn im Browser schon eine gültige Sitzung liegt (typisch: ein Torhüter,
+// der bereits in seiner Mannschaft steht und sich zusätzlich für die Torwartgruppe
+// einträgt). Dann wird nur verknüpft statt ein zweites Konto anzulegen.
+let angemeldetAls = null;
 
 const $ = (id) => document.getElementById(id);
 const zeige = (id, an) => $(id).classList.toggle("versteckt", !an);
@@ -132,9 +149,15 @@ function fehler(text) {
 }
 
 async function api(action, payload) {
+  const headers = { "Content-Type": "application/json" };
+  // Nur mitschicken, wenn vorhanden -- die Erstanmeldung eines echten Neulings hat
+  // keinen Token, und der Server behandelt beide Fälle bewusst unterschiedlich.
+  let token = null;
+  try { token = localStorage.getItem(TOKEN_STORAGE_KEY); } catch (_) {}
+  if (token) headers["Authorization"] = "Bearer " + token;
   const resp = await fetch(GATEWAY_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ action, ...payload })
   });
   const data = await resp.json().catch(() => ({}));
@@ -165,6 +188,16 @@ async function start() {
     fehler("Dieser Link ist unvollständig. Bitte scanne den QR-Code deines Trainers noch einmal.");
     return;
   }
+  // Ein abgelaufenes oder fremdes Token darf die Anmeldung eines echten Neulings
+  // nicht kaputtmachen -- der 401 wird deshalb still verworfen, nicht angezeigt.
+  try {
+    const ich = await api("me", {});
+    const name = `${ich.vorname || ""} ${ich.nachname || ""}`.trim();
+    angemeldetAls = { username: ich.username, name: name || ich.username };
+  } catch (_) {
+    angemeldetAls = null;
+  }
+
   try {
     const info = await api("km-reg-info", { token: regToken });
     $("titel").textContent = info.teamName || "Kadermanager";
@@ -186,9 +219,14 @@ async function start() {
         gewaehlterSpieler = s;
         Array.from(liste.children).forEach((c) => c.classList.remove("gewaehlt"));
         btn.classList.add("gewaehlt");
-        $("pw-titel").textContent = `Hallo ${s.name.split(" ")[0]}!`;
-        zeige("schritt-passwort", true);
-        $("schritt-passwort").scrollIntoView({ behavior: "smooth", block: "start" });
+        const schritt = angemeldetAls ? "schritt-bestaetigen" : "schritt-passwort";
+        if (angemeldetAls) {
+          $("bestaetigen-name").textContent = angemeldetAls.name;
+        } else {
+          $("pw-titel").textContent = `Hallo ${s.name.split(" ")[0]}!`;
+        }
+        zeige(schritt, true);
+        $(schritt).scrollIntoView({ behavior: "smooth", block: "start" });
       });
       liste.appendChild(btn);
     });
@@ -197,6 +235,55 @@ async function start() {
     $("untertitel").textContent = "";
     fehler(e.message);
   }
+}
+
+// Bereits angemeldet: nur verknüpfen, kein Passwort. Der Server erkennt das am
+// mitgeschickten Bearer-Token und legt dann kein zweites Konto an.
+$("btn-verknuepfen").addEventListener("click", async () => {
+  $("fehler").classList.add("versteckt");
+  if (!gewaehlterSpieler) { fehler("Bitte wähle zuerst deinen Namen aus."); return; }
+
+  const btn = $("btn-verknuepfen");
+  btn.disabled = true;
+  btn.textContent = "Wird verbunden…";
+  try {
+    const res = await api("km-reg-abschliessen", { token: regToken, spielerId: gewaehlterSpieler.id });
+    zeigeFertig(res);
+  } catch (e) {
+    fehler(e.message);
+    btn.disabled = false;
+    btn.textContent = "Ja, das bin ich";
+  }
+});
+
+$("btn-abmelden").addEventListener("click", (e) => {
+  e.preventDefault();
+  try { localStorage.removeItem(TOKEN_STORAGE_KEY); } catch (_) {}
+  angemeldetAls = null;
+  zeige("schritt-bestaetigen", false);
+  $("pw-titel").textContent = `Hallo ${gewaehlterSpieler.name.split(" ")[0]}!`;
+  zeige("schritt-passwort", true);
+  $("schritt-passwort").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+function zeigeFertig(res) {
+  zeige("schritt-spieler", false);
+  zeige("schritt-passwort", false);
+  zeige("schritt-bestaetigen", false);
+  zeige("zeit", false);
+  const vorname = gewaehlterSpieler.name.split(" ")[0];
+  let text;
+  if (!res.verknuepft) {
+    text = res.hinweis || "Dein Konto ist angelegt.";
+  } else if (angemeldetAls) {
+    // Bestehendes Konto: der Benutzername ist bereits bekannt, dafür ist die neue
+    // Zugehörigkeit die eigentliche Nachricht.
+    text = `Fertig, ${vorname}! Du gehörst jetzt auch zu „${res.teamName || "dieser Mannschaft"}“.`;
+  } else {
+    text = `Fertig, ${vorname}! Dein Benutzername ist „${res.username}“.`;
+  }
+  $("fertig-text").textContent = text;
+  zeige("schritt-fertig", true);
 }
 
 $("btn-fertig").addEventListener("click", async () => {
@@ -216,13 +303,7 @@ $("btn-fertig").addEventListener("click", async () => {
     // Session-Token in denselben Storage-Key wie alle Tools -- der Spieler ist
     // damit sofort angemeldet und muss sich nicht direkt nochmal einloggen.
     try { localStorage.setItem(TOKEN_STORAGE_KEY, res.token); } catch (_) {}
-    zeige("schritt-spieler", false);
-    zeige("schritt-passwort", false);
-    zeige("zeit", false);
-    $("fertig-text").textContent = res.verknuepft
-      ? `Fertig, ${gewaehlterSpieler.name.split(" ")[0]}! Dein Benutzername ist „${res.username}“.`
-      : (res.hinweis || "Dein Konto ist angelegt.");
-    zeige("schritt-fertig", true);
+    zeigeFertig(res);
   } catch (e) {
     fehler(e.message);
     btn.disabled = false;

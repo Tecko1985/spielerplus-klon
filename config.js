@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // Server-Cap fürs Datei-Gateway (muss zum admin-worker.js-Limit passen).
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -61,7 +61,10 @@ const RECHTE_BEREICH_LABELS = {
   termine: "Termine",
   aufgaben: "Aufgaben",
   aufstellungen: "Aufstellungen",
-  gruppen: "Gruppen",
+  // "Trainingsgruppen", nicht "Gruppen": seit team.typ meint "Gruppe" im UI das
+  // mannschaftsübergreifende Konstrukt (Torwartgruppe). Hier geht es um die
+  // Kleingruppen INNERHALB eines Termins. Der interne Schlüssel bleibt `gruppen`.
+  gruppen: "Trainingsgruppen",
   spielberichte: "Spielberichte",
   kader: "Kader (Spieler)",
   kasse: "Kasse",
@@ -87,6 +90,21 @@ const ROLLEN_RECHTE = {
 };
 
 const APP_CHANGELOG = [
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Gruppen über Mannschaftsgrenzen hinweg",
+        items: [
+          "Neben Mannschaften lassen sich jetzt Gruppen anlegen (z. B. Torwartgruppe, Athletikgruppe): dieselben Termine, Zu-/Absagen, Umfragen und Auswertungen wie bei einer Mannschaft, nur ohne eigene Kasse.",
+          "Ein Spieler kann gleichzeitig in seiner Mannschaft und in einer oder mehreren Gruppen stehen.",
+          "Beim Anlegen eines Spielers in einer Gruppe lässt sich ein vorhandener Spieler aus einer Mannschaft übernehmen — Name und Kontoverknüpfung kommen mit, sodass es dieselbe Person bleibt.",
+          "Meldet sich ein Spieler über den QR-Code für eine zweite Mannschaft oder Gruppe an und ist bereits angemeldet, wird sein bestehendes Konto verknüpft, statt ein zweites anzulegen. Vorher wird angezeigt, mit welchem Konto verknüpft wird.",
+          "Die Untergruppen innerhalb eines Termins heißen zur Unterscheidung jetzt „Trainingsgruppen“."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [

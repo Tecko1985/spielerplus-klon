@@ -243,6 +243,11 @@ function normalizeTeam(t) {
   return {
     id: d.id || uuid(),
     name: typeof d.name === "string" ? d.name : "",
+    // "gruppe" = mannschaftsübergreifendes Konstrukt (Torwart-, Athletikgruppe), dessen
+    // Spieler zusätzlich in ihrer regulären Mannschaft stehen. Technisch identisch zu
+    // einer Mannschaft, nur ohne Kasse. Fehlendes Feld ⇒ "mannschaft", damit
+    // Bestandsdaten unverändert weiterlaufen.
+    typ: d.typ === "gruppe" ? "gruppe" : "mannschaft",
     farbe: /^#[0-9a-fA-F]{6}$/.test(d.farbe) ? d.farbe : "#1a56a0",
     kader,
     termine: Array.isArray(d.termine) ? d.termine.map((x) => normalizeTermin(x, kaderIds)) : [],
@@ -272,13 +277,18 @@ function normalizeData(data) {
   meta.rollenRechte = normalizeRollenRechte(meta.rollenRechte);
   return { meta, teams };
 }
-function seedTeam(name, farbe) {
+function seedTeam(name, farbe, typ) {
+  const istGruppe = typ === "gruppe";
   return {
-    id: uuid(), name, farbe: farbe || "#1a56a0",
+    id: uuid(), name, typ: istGruppe ? "gruppe" : "mannschaft", farbe: farbe || "#1a56a0",
     kader: [], termine: [], umfragen: [], abwesenheiten: [],
-    kasse: { strafenkatalog: clone(DEFAULT_STRAFEN).map((s) => ({ id: uuid(), bezeichnung: s.bezeichnung, betrag: s.betrag })), buchungen: [] }
+    // Gruppen führen keine Kasse (der Tab ist für sie ausgeblendet) — der Strafenkatalog
+    // wäre eine Datenleiche. Das Feld selbst bleibt, damit ein späterer Typwechsel
+    // zur Mannschaft nicht auf fehlende Strukturen läuft.
+    kasse: { strafenkatalog: istGruppe ? [] : clone(DEFAULT_STRAFEN).map((s) => ({ id: uuid(), bezeichnung: s.bezeichnung, betrag: s.betrag })), buchungen: [] }
   };
 }
+function istGruppe(team) { return !!team && team.typ === "gruppe"; }
 // Abwesenheit (Urlaub/Krank) eines Spielers, deren Zeitraum das gegebene Datum
 // überdeckt — rein informativ, ändert nie den Zu-/Absage-Status eines Termins.
 function abwesenheitFuer(team, spielerId, datum) {
@@ -344,13 +354,23 @@ function renderTeamSelect() {
   const el = document.getElementById("team-select");
   const teams = appData.teams;
   if (!teams.some((t) => t.id === currentTeamId)) currentTeamId = teams[0] ? teams[0].id : null;
-  el.innerHTML = teams.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
+  const optionen = (liste) => liste.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("");
+  const mannschaften = teams.filter((t) => !istGruppe(t));
+  const gruppen = teams.filter(istGruppe);
+  // Gruppierung nur, wenn beide Arten vorkommen — sonst wäre eine einzelne
+  // optgroup-Überschrift über der ohnehin vollständigen Liste nur Ballast.
+  el.innerHTML = gruppen.length && mannschaften.length
+    ? `<optgroup label="Mannschaften">${optionen(mannschaften)}</optgroup><optgroup label="Gruppen">${optionen(gruppen)}</optgroup>`
+    : optionen(teams);
   if (currentTeamId) el.value = currentTeamId;
   el.disabled = teams.length === 0;
 }
 function selectTeam(id) {
   currentTeamId = id;
   appData.meta.currentTeamId = id;
+  // switchTab() ist die einzige Stelle, die den aktiven Tab umschaltet — ohne diesen
+  // Aufruf bliebe der Kasse-Inhalt sichtbar, obwohl sein Nav-Button gerade verschwindet.
+  if (currentTab === "kasse" && istGruppe(currentTeam())) switchTab("termine");
   renderAll();
 }
 // Blendet den passenden "Noch keine Mannschaft"-Hinweis ein und liefert das aktuelle
@@ -1322,10 +1342,46 @@ function removeFotoPending() {
   editingFotoId = "";
   updateFotoPreview();
 }
+// Nur in Gruppen und nur beim Anlegen: die Spieler stehen dort bereits in ihrer
+// Mannschaft, und ihr Konto-Nutzername (automatisch erzeugt, z. B. "leon.mueller2")
+// ist dem Trainer nicht bekannt — abtippen wäre Rateraten.
+function renderUebernehmenAuswahl(team, istNeu) {
+  const wrap = document.getElementById("pf-uebernehmen-wrap");
+  const sel = document.getElementById("pf-uebernehmen");
+  const kandidaten = [];
+  if (istGruppe(team) && istNeu) {
+    const schonDrin = new Set(team.kader.map((s) => (s.linkedUsername || "").toLowerCase()).filter(Boolean));
+    appData.teams.filter((t) => !istGruppe(t)).forEach((t) => {
+      t.kader.forEach((s) => {
+        if (s.linkedUsername && schonDrin.has(s.linkedUsername.toLowerCase())) return;
+        kandidaten.push({ teamId: t.id, spielerId: s.id, label: `${s.name} — ${t.name}` });
+      });
+    });
+  }
+  wrap.classList.toggle("hidden", kandidaten.length === 0);
+  sel.innerHTML = `<option value="">— neuen Spieler von Hand anlegen —</option>` + kandidaten
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((k) => `<option value="${escapeHtml(k.teamId)}|${escapeHtml(k.spielerId)}">${escapeHtml(k.label)}</option>`).join("");
+}
+function uebernehmeSpieler(wert) {
+  if (!wert) return;
+  const [teamId, spielerId] = wert.split("|");
+  const quelle = appData.teams.find((t) => t.id === teamId);
+  const s = quelle ? findSpieler(quelle, spielerId) : null;
+  if (!s) return;
+  document.getElementById("pf-name").value = s.name || "";
+  document.getElementById("pf-position").value = s.position || "";
+  document.getElementById("pf-nummer").value = s.nummer || "";
+  document.getElementById("pf-linked").value = s.linkedUsername || "";
+  // fotoId bewusst NICHT: zwei Kader-Einträge mit derselben Datei-Id wären eine Falle,
+  // weil saveSpieler()/deleteSpieler() sie per gatewayDeleteFile() wegräumen und der
+  // jeweils andere Eintrag sein Bild verlöre.
+}
 function openSpielerModal(id) {
   const team = currentTeam();
   if (!team || !hasRecht(team, "kader")) return;
   const s = id ? findSpieler(team, id) : null;
+  renderUebernehmenAuswahl(team, !s);
   editingSpielerId = s ? s.id : null;
   editingFotoId = s ? s.fotoId : "";
   document.getElementById("pf-foto-status").textContent = "";
@@ -1744,17 +1800,33 @@ function renderTeamAdmin() {
   list.innerHTML = appData.teams.map((t) => `
     <div class="team-admin-row">
       <div class="team-admin-left"><span class="team-dot" style="background:${/^#[0-9a-fA-F]{6}$/.test(t.farbe) ? t.farbe : "#1a56a0"}"></span>
-        <div><div class="kader-name">${escapeHtml(t.name)}</div><div class="kader-pos">${t.kader.length} Spieler · ${t.termine.length} Termine</div></div>
+        <div><div class="kader-name">${escapeHtml(t.name)}${istGruppe(t) ? ` <span class="kategorie-tag">Gruppe</span>` : ""}</div><div class="kader-pos">${t.kader.length} Spieler · ${t.termine.length} Termine</div></div>
       </div>
       ${manage ? `<button class="icon-btn edit" data-edit-team="${escapeHtml(t.id)}" title="Bearbeiten">✎</button>` : ""}
     </div>`).join("");
   empty.classList.toggle("hidden", appData.teams.length > 0 || !manage);
 }
+function setTeamModalTyp(typ) {
+  const gruppe = typ === "gruppe";
+  document.querySelectorAll("#tf-typ button").forEach((b) => b.classList.toggle("active", (b.dataset.typ === "gruppe") === gruppe));
+  document.getElementById("tf-name").placeholder = gruppe ? "z. B. Torwartgruppe" : "z. B. A-Jugend";
+  document.getElementById("tf-typ-hinweis").textContent = gruppe
+    ? "Mannschaftsübergreifend: die Spieler stehen zusätzlich in ihrer eigenen Mannschaft. Eigene Termine und Auswertung, aber keine Kasse."
+    : "";
+  const titel = document.getElementById("team-modal-title");
+  titel.textContent = editingTeamId
+    ? (gruppe ? "Gruppe bearbeiten" : "Mannschaft bearbeiten")
+    : (gruppe ? "Neue Gruppe" : "Neue Mannschaft");
+}
+function teamModalTyp() {
+  const aktiv = document.querySelector("#tf-typ button.active");
+  return aktiv && aktiv.dataset.typ === "gruppe" ? "gruppe" : "mannschaft";
+}
 function openTeamModal(id) {
   if (!hasRecht(currentTeam(), "team")) return;
   const t = id ? appData.teams.find((x) => x.id === id) : null;
   editingTeamId = t ? t.id : null;
-  document.getElementById("team-modal-title").textContent = t ? "Mannschaft bearbeiten" : "Neue Mannschaft";
+  setTeamModalTyp(t ? t.typ : "mannschaft");
   document.getElementById("tf-name").value = t ? t.name : "";
   document.getElementById("tf-farbe").value = /^#[0-9a-fA-F]{6}$/.test(t && t.farbe) ? t.farbe : "#1a56a0";
   document.getElementById("btn-delete-team").classList.toggle("hidden", !t);
@@ -1765,9 +1837,14 @@ function closeTeamModal() { document.getElementById("team-modal").classList.add(
 function saveTeam() {
   const name = val("tf-name").trim();
   if (!name) { alert("Bitte einen Namen eingeben."); return; }
+  const typ = teamModalTyp();
   let t = editingTeamId ? appData.teams.find((x) => x.id === editingTeamId) : null;
-  if (!t) { t = seedTeam(name, val("tf-farbe")); appData.teams.push(t); if (!currentTeamId) { currentTeamId = t.id; appData.meta.currentTeamId = t.id; } }
+  if (!t) { t = seedTeam(name, val("tf-farbe"), typ); appData.teams.push(t); if (!currentTeamId) { currentTeamId = t.id; appData.meta.currentTeamId = t.id; } }
   t.name = name;
+  // Typwechsel ist erlaubt und verlustfrei: er blendet die Kasse nur ein oder aus,
+  // gelöscht wird nichts. Eine versehentlich als Mannschaft angelegte Gruppe muss
+  // deshalb nicht neu aufgebaut werden.
+  t.typ = typ;
   t.farbe = val("tf-farbe");
   persist();
   renderAll();
@@ -1775,7 +1852,11 @@ function saveTeam() {
 }
 function deleteTeam() {
   if (!editingTeamId) return;
-  if (!confirm("Diese Mannschaft mit Kader, Terminen, Umfragen und Kasse wirklich löschen?")) return;
+  const t = appData.teams.find((x) => x.id === editingTeamId);
+  const frage = istGruppe(t)
+    ? "Diese Gruppe mit Kader, Terminen und Umfragen wirklich löschen? Die Spieler bleiben in ihren Mannschaften."
+    : "Diese Mannschaft mit Kader, Terminen, Umfragen und Kasse wirklich löschen?";
+  if (!confirm(frage)) return;
   appData.teams = appData.teams.filter((x) => x.id !== editingTeamId);
   if (currentTeamId === editingTeamId) { currentTeamId = appData.teams[0] ? appData.teams[0].id : null; appData.meta.currentTeamId = currentTeamId; }
   persist();
@@ -1841,8 +1922,10 @@ function toggleRollenRecht(rolle, bereich, on) {
 // ---------- Meta / Changelog / Nutzer ----------
 function renderMeta() {
   const m = appData.meta || {};
+  const gruppen = appData.teams.filter(istGruppe).length;
   const rows = [
-    ["Mannschaften", String(appData.teams.length)],
+    ["Mannschaften", String(appData.teams.length - gruppen)],
+    ["Gruppen", String(gruppen)],
     ["Letzter Stand", m.stand ? new Date(m.stand).toLocaleString("de-DE") : "—"]
   ];
   document.getElementById("meta-view").innerHTML = rows.map(([k, v]) =>
@@ -1877,6 +1960,10 @@ function renderHeaderUser() {
 function applyEditVisibility() {
   const editable = canManage();
   document.body.classList.toggle("can-edit", editable);
+  // Gruppen führen keine Kasse. Bewusst VOR dem frühen Return unten, sonst liefe das
+  // für Spielerkonten (kein canManage) nie und die sähen den Tab weiterhin.
+  const kasseBtn = document.querySelector('nav button[data-tab="kasse"]');
+  if (kasseBtn) kasseBtn.classList.toggle("hidden", istGruppe(currentTeam()));
   document.querySelectorAll(".editor-only").forEach((el) => el.classList.toggle("hidden", !editable));
   if (!editable) return;
   const team = currentTeam();
@@ -2117,6 +2204,7 @@ function setupListeners() {
     const unclaim = e.target.closest("[data-unclaim]"); if (unclaim) { unclaimSpieler(unclaim.dataset.unclaim); return; }
     const edit = e.target.closest("[data-edit-spieler]"); if (edit) openSpielerModal(edit.dataset.editSpieler);
   });
+  document.getElementById("pf-uebernehmen").addEventListener("change", (e) => uebernehmeSpieler(e.target.value));
   document.getElementById("spieler-modal-close").addEventListener("click", closeSpielerModal);
   document.getElementById("btn-cancel-spieler").addEventListener("click", closeSpielerModal);
   document.getElementById("btn-save-spieler").addEventListener("click", saveSpieler);
@@ -2189,6 +2277,10 @@ function setupListeners() {
   document.getElementById("btn-new-team").addEventListener("click", () => openTeamModal(null));
   document.getElementById("team-admin-list").addEventListener("click", (e) => {
     const ed = e.target.closest("[data-edit-team]"); if (ed) openTeamModal(ed.dataset.editTeam);
+  });
+  document.getElementById("tf-typ").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-typ]");
+    if (btn) setTeamModalTyp(btn.dataset.typ);
   });
   document.getElementById("team-modal-close").addEventListener("click", closeTeamModal);
   document.getElementById("btn-cancel-team").addEventListener("click", closeTeamModal);
