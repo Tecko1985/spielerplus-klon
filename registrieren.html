@@ -67,10 +67,38 @@
   }
   .zeit { font-size: 13px; color: var(--muted); text-align: center; margin-top: 10px; }
   .versteckt { display: none; }
+  .version-badge {
+    display: inline-block; background: var(--blue-light); color: var(--blue);
+    font-size: 11px; font-weight: 700; border-radius: 99px;
+    padding: 2px 9px; margin-left: 6px; vertical-align: middle;
+  }
+  .version-badge-link { cursor: pointer; }
+  nav {
+    display: flex; gap: 4px; width: 100%; max-width: 460px;
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px; margin-bottom: 14px;
+  }
+  nav button {
+    background: none; border: none; padding: 8px 14px;
+    font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer;
+    border-radius: 8px;
+  }
+  nav button:hover { background: var(--gray); }
+  nav button.active { color: var(--blue); background: var(--blue-light); }
+  .tab-section { display: none; }
+  .tab-section.active { display: block; }
+  .changelog-list { list-style: disc; padding-left: 20px; margin: 0;
+                    font-size: 14px; line-height: 1.6; color: var(--muted); text-align: left; }
 </style>
 </head>
 <body>
+<nav>
+  <button data-tab="anmelden" class="active">Anmelden</button>
+  <button data-tab="info" style="margin-left:auto;">Info</button>
+</nav>
+
 <div class="wrap">
+ <div class="tab-section active" id="tab-anmelden">
 
   <div class="card">
     <img src="logo.png" alt="" class="logo" />
@@ -118,6 +146,21 @@
   </div>
 
   <p class="zeit versteckt" id="zeit"></p>
+ </div>
+
+ <div class="tab-section" id="tab-info">
+   <div class="card">
+     <h1 style="font-size:18px;">Über die Anmeldung <span class="version-badge" id="version-badge-2"></span></h1>
+     <p class="sub">
+       Über diesen Link verbindest du dich einmalig mit deinem Kaderplatz und legst dein
+       Passwort fest. Danach meldest du dich ganz normal im Kadermanager an.
+     </p>
+   </div>
+   <div class="card">
+     <h1 style="font-size:18px;">Änderungen</h1>
+     <ul class="changelog-list" id="changelog-list"></ul>
+   </div>
+ </div>
 </div>
 
 <script>
@@ -314,6 +357,26 @@ $("btn-fertig").addEventListener("click", async () => {
 $("btn-weiter").addEventListener("click", () => { location.href = "index.html"; });
 
 start();
+
+// ---------- Info-Tab / Versionshistorie ----------
+const APP_VERSION = '1.0';
+const APP_CHANGELOG = [
+  'Anmeldung über den persönlichen Link, ohne vorher ein Konto zu brauchen',
+  'Eigenen Namen aus der Kaderliste antippen statt abtippen',
+  'Wer schon ein Konto hat, verknüpft es per Klick statt ein zweites anzulegen',
+  'Passwort selbst wählen, mit Prüfung auf ausreichende Länge und Zeichenmischung'
+];
+function activateTab(name) {
+  document.querySelectorAll('nav button[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + name));
+}
+(function setupInfoTab() {
+  document.getElementById('version-badge-2').textContent = 'v' + APP_VERSION;
+  document.getElementById('changelog-list').innerHTML = APP_CHANGELOG.map(c => '<li>' + c + '</li>').join('');
+  document.querySelectorAll('nav button[data-tab]').forEach(b => {
+    b.addEventListener('click', () => activateTab(b.dataset.tab));
+  });
+})();
 </script>
 </body>
 </html>
